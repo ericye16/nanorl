@@ -7,6 +7,7 @@ WANDB_DIR=/tmp/nanorl/ MUJOCO_GL=egl XLA_PYTHON_CLIENT_PREALLOCATE=false CUDA_VI
     --record_dir /tmp/nanorl/videos/ \
     --record_every 10000 \
     --warmstart-steps 5000 \
+    --checkpoint_interval 10000 \
     --max-steps 1000000 \
     --discount 0.99 \
     --agent-config.critic-dropout-rate 0.01 \
