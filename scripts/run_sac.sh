@@ -4,8 +4,6 @@
 
 WANDB_DIR=/tmp/nanorl/ MUJOCO_GL=egl XLA_PYTHON_CLIENT_PREALLOCATE=false CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
     --root-dir /tmp/nanorl/runs/ \
-    --record_dir /tmp/nanorl/videos/ \
-    --record_every 10000 \
     --warmstart-steps 5000 \
     --checkpoint_interval 10000 \
     --max-steps 1000000 \

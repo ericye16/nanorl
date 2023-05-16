@@ -13,6 +13,7 @@ from robopianist import suite
 from nanorl import replay, specs
 from nanorl import SAC, SACConfig
 from nanorl.infra import seed_rngs, Experiment, train_loop, eval_loop, wrap_env
+from robopianist.wrappers import PianoSoundVideoWrapper
 
 
 @dataclass(frozen=True)
@@ -186,7 +187,7 @@ def main(args: Args) -> None:
     # Continuously monitor for checkpoints and evaluate.
     eval_loop(
         experiment=experiment,
-        env_fn=lambda: env_fn(record_dir=experiment.data_dir / "videos"),
+        env_fn=lambda: PianoSoundVideoWrapper(env_fn(record_dir=experiment.data_dir / "videos"), record_every=1, camera_id="piano/back", record_dir=experiment.data_dir / "videos"),
         agent_fn=agent_fn,
         num_episodes=args.eval_episodes,
         max_steps=args.max_steps,
