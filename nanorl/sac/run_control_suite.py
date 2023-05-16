@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Optional
 import dm_env
 import tyro
-from dm_control import suite
+# from dm_control import suite
+from robopianist import suite
 
 from nanorl import replay, specs
 from nanorl import SAC, SACConfig
@@ -66,6 +67,8 @@ class Args:
     """Which domain to use."""
     task_name: str = "swingup"
     """Which task to use."""
+    environment_name: str = "RoboPianist-debug-TwinkleTwinkleLittleStar-v0"
+    """Environment name (song)"""
 
     # Environment wrapper configuration.
     frame_stack: int = 1
@@ -89,7 +92,7 @@ def main(args: Args) -> None:
     if args.name:
         run_name = args.name
     else:
-        run_name = f"SAC-{args.domain_name}-{args.task_name}-{args.seed}-{time.time()}"
+        run_name = f"SAC-{args.environment_name}-{args.seed}-{time.time()}"
 
     # Seed RNGs.
     seed_rngs(args.seed)
@@ -146,9 +149,10 @@ def main(args: Args) -> None:
 
     def env_fn(record_dir: Optional[Path] = None) -> dm_env.Environment:
         env = suite.load(
-            domain_name=args.domain_name,
-            task_name=args.task_name,
-            task_kwargs=dict(random=args.seed),
+            environment_name=args.environment_name
+            # domain_name=args.domain_name,
+            # task_name=args.task_name,
+            # task_kwargs=dict(random=args.seed),
         )
 
         return wrap_env(
