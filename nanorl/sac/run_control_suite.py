@@ -13,7 +13,7 @@ from robopianist import suite
 from nanorl import replay, specs
 from nanorl import SAC, SACConfig
 from nanorl.infra import seed_rngs, Experiment, train_loop, eval_loop, wrap_env
-from robopianist.wrappers import PianoSoundVideoWrapper
+from robopianist.wrappers import PianoSoundVideoWrapper, MidiEvaluationWrapper
 
 
 @dataclass(frozen=True)
@@ -70,6 +70,7 @@ class Args:
     """Which task to use."""
     environment_name: str = "RoboPianist-debug-TwinkleTwinkleLittleStar-v0"
     """Environment name (song)"""
+    n_seconds_lookahead: Optional[float] = None
 
     # Environment wrapper configuration.
     frame_stack: int = 1
@@ -150,7 +151,9 @@ def main(args: Args) -> None:
 
     def env_fn(record_dir: Optional[Path] = None) -> dm_env.Environment:
         env = suite.load(
-            environment_name=args.environment_name
+            environment_name=args.environment_name,
+            task_kwargs={"n_seconds_lookahead": args.n_seconds_lookahead,
+                         }
             # domain_name=args.domain_name,
             # task_name=args.task_name,
             # task_kwargs=dict(random=args.seed),
@@ -187,7 +190,11 @@ def main(args: Args) -> None:
     # Continuously monitor for checkpoints and evaluate.
     eval_loop(
         experiment=experiment,
-        env_fn=lambda: PianoSoundVideoWrapper(env_fn(record_dir=experiment.data_dir / "videos"), record_every=1, camera_id="piano/back", record_dir=experiment.data_dir / "videos"),
+        env_fn=lambda: MidiEvaluationWrapper(PianoSoundVideoWrapper(
+            env_fn(record_dir=experiment.data_dir / "videos"),
+            record_every=1, camera_id="piano/back", 
+            record_dir=experiment.data_dir / "videos"),
+            deque_size=args.eval_episodes),
         agent_fn=agent_fn,
         num_episodes=args.eval_episodes,
         max_steps=args.max_steps,

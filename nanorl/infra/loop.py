@@ -102,6 +102,7 @@ def eval_loop(
 
             # Log statistics.
             log_dict = utils.prefix_dict("eval", env.get_statistics())
+            log_dict.update(utils.prefix_dict("eval_music", env.get_musical_metrics()))
             experiment.log(log_dict, step=i)
 
             # Maybe log video.
