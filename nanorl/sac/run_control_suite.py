@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 import dm_env
 import tyro
+
 # from dm_control import suite
 from robopianist import suite
 
@@ -152,8 +153,9 @@ def main(args: Args) -> None:
     def env_fn(record_dir: Optional[Path] = None) -> dm_env.Environment:
         env = suite.load(
             environment_name=args.environment_name,
-            task_kwargs={"n_seconds_lookahead": args.n_seconds_lookahead,
-                         }
+            task_kwargs={
+                "n_seconds_lookahead": args.n_seconds_lookahead,
+            }
             # domain_name=args.domain_name,
             # task_name=args.task_name,
             # task_kwargs=dict(random=args.seed),
@@ -190,11 +192,14 @@ def main(args: Args) -> None:
     # Continuously monitor for checkpoints and evaluate.
     eval_loop(
         experiment=experiment,
-        env_fn=lambda: MidiEvaluationWrapper(PianoSoundVideoWrapper(
-            env_fn(record_dir=experiment.data_dir / "videos"),
-            record_every=1, camera_id="piano/back", 
-            record_dir=experiment.data_dir / "videos"),
-            deque_size=args.eval_episodes),
+        env_fn=lambda: MidiEvaluationWrapper(
+            PianoSoundVideoWrapper(
+                env_fn(record_dir=experiment.data_dir / "videos"),
+                record_every=1,
+                camera_id="piano/back",
+                record_dir=experiment.data_dir / "videos",
+            )
+        ),
         agent_fn=agent_fn,
         num_episodes=args.eval_episodes,
         max_steps=args.max_steps,
