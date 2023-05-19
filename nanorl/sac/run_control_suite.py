@@ -65,15 +65,20 @@ class Args:
     mode: str = "online"
 
     # Task configuration.
-    domain_name: str = "cartpole"
-    """Which domain to use."""
-    task_name: str = "swingup"
-    """Which task to use."""
-    environment_name: str = "RoboPianist-debug-TwinkleTwinkleLittleStar-v0"
-    """Environment name (song)"""
-    n_seconds_lookahead: Optional[float] = None
+    environment_name: str = "RoboPianist-debug-TwinkleTwinkleRousseau-v0"
+    n_steps_lookahead: int = 10
+    trim_silence: bool = False
     gravity_compensation: bool = False
     reduced_action_space: bool = False
+    control_timestep: float = 0.05
+    stretch_factor: float = 1.0
+    shift_factor: int = 0
+    wrong_press_termination: bool = False
+    disable_fingering_reward: bool = False
+    disable_forearm_reward: bool = False
+    disable_colorization: bool = False
+    disable_hand_collisions: bool = False
+    primitive_fingertip_collisions: bool = False
 
     # Environment wrapper configuration.
     frame_stack: int = 1
@@ -155,14 +160,23 @@ def main(args: Args) -> None:
     def env_fn(record_dir: Optional[Path] = None) -> dm_env.Environment:
         env = suite.load(
             environment_name=args.environment_name,
-            task_kwargs={
-                "n_seconds_lookahead": args.n_seconds_lookahead,
-                "gravity_compensation": args.gravity_compensation,
-                "reduced_action_space": args.reduced_action_space,
-            }
-            # domain_name=args.domain_name,
-            # task_name=args.task_name,
-            # task_kwargs=dict(random=args.seed),
+            seed=args.seed,
+            stretch=args.stretch_factor,
+            shift=args.shift_factor,
+            **dict(
+                n_steps_lookahead=args.n_steps_lookahead,
+                trim_silence=args.trim_silence,
+                gravity_compensation=args.gravity_compensation,
+                reduced_action_space=args.reduced_action_space,
+                control_timestep=args.control_timestep,
+                wrong_press_termination=args.wrong_press_termination,
+                disable_fingering_reward=args.disable_fingering_reward,
+                disable_forearm_reward=args.disable_forearm_reward,
+                disable_colorization=args.disable_colorization,
+                disable_hand_collisions=args.disable_hand_collisions,
+                primitive_fingertip_collisions=args.primitive_fingertip_collisions,
+                change_color_on_activation=True,
+            ),
         )
 
         return wrap_env(
