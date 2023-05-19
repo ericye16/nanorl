@@ -15,6 +15,8 @@ WANDB_DIR=/data/nanorl/ MUJOCO_GL=egl XLA_PYTHON_CLIENT_PREALLOCATE=false CUDA_V
     --agent-config.activation "relu" \
     --action_reward_observation \
     --eval_episodes 1 \
+    --reduced_action_space \
+    --gravity_compensation \
     --tqdm-bar \
     --environment_name RoboPianist-debug-TwinkleTwinkleLittleStar-v0
     # --environment_name RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0

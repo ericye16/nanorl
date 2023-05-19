@@ -72,6 +72,8 @@ class Args:
     environment_name: str = "RoboPianist-debug-TwinkleTwinkleLittleStar-v0"
     """Environment name (song)"""
     n_seconds_lookahead: Optional[float] = None
+    gravity_compensation: bool = False
+    reduced_action_space: bool = False
 
     # Environment wrapper configuration.
     frame_stack: int = 1
@@ -155,6 +157,8 @@ def main(args: Args) -> None:
             environment_name=args.environment_name,
             task_kwargs={
                 "n_seconds_lookahead": args.n_seconds_lookahead,
+                "gravity_compensation": args.gravity_compensation,
+                "reduced_action_space": args.reduced_action_space,
             }
             # domain_name=args.domain_name,
             # task_name=args.task_name,
