@@ -1,2 +1,6 @@
 __pycache__/
 *.egg-info/
+.mypy_cache
+runs
+venv
+.robopianist
