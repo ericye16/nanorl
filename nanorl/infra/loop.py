@@ -1,7 +1,11 @@
+from multiprocessing import Pipe, Process, Queue
+from queue import Empty
 import time
 from pathlib import Path
 from typing import Any, Callable
+from multiprocessing.connection import Connection
 
+from jax import numpy as jnp
 import dm_env
 import tqdm
 from nanorl import agent, replay, specs
@@ -13,6 +17,20 @@ EnvFn = Callable[[], dm_env.Environment]
 AgentFn = Callable[[dm_env.Environment], agent.Agent]
 ReplayFn = Callable[[dm_env.Environment], replay.ReplayBuffer]
 LoggerFn = Callable[[], Any]
+
+
+def environment_worker(env_fn: EnvFn, pipe: Connection):
+    env = env_fn()
+    timestep = env.reset()
+    pipe.send(timestep)
+    while True:
+        action = pipe.recv()
+        timestep = env.step(action)
+        pipe.send(timestep)
+        if timestep.last():
+            stats = env.get_statistics()
+            timestep = env.reset()
+            pipe.send((stats, timestep))
 
 
 def train_loop(
@@ -27,46 +45,63 @@ def train_loop(
     resets: bool,
     reset_interval: int,
     tqdm_bar: bool,
+    num_workers: int,
 ) -> None:
     env = env_fn()
     agent = agent_fn(env)
-    replay_buffer = replay_fn(env)
+    replay_buffers = [replay_fn(env) for _ in range(num_workers)]
 
     spec = specs.EnvironmentSpec.make(env)
-    timestep = env.reset()
-    replay_buffer.insert(timestep, None)
+
+    pipes, child_pipes = zip(*[Pipe() for _ in range(num_workers)])
+    procs = [Process(target=environment_worker, args=(env_fn, pipe)) for pipe in child_pipes]
+    for p in procs:
+        p.start()
+
+    timesteps = [pipe.recv() for pipe in pipes]
+    for replay_buffer, ts in zip(replay_buffers, timesteps):
+        replay_buffer.insert(ts, None)
 
     start_time = time.time()
-    for i in tqdm.tqdm(range(1, max_steps + 1), disable=not tqdm_bar):
-        if i < warmstart_steps:
-            action = spec.sample_action(random_state=env.random_state)
+    for step in tqdm.tqdm(range(1, max_steps + 1), disable=not tqdm_bar):
+        if step < warmstart_steps // num_workers:
+            actions = [spec.sample_action(random_state=env.random_state) for _ in timesteps]
         else:
-            agent, action = agent.sample_actions(timestep.observation)
+            agent, actions = agent.sample_actions(jnp.stack([ts.observation for ts in timesteps]))
 
-        timestep = env.step(action)
-        replay_buffer.insert(timestep, action)
+        for action, pipe in zip(actions, pipes):
+            pipe.send(action)
 
-        if timestep.last():
-            experiment.log(utils.prefix_dict("train", env.get_statistics()), step=i)
-            timestep = env.reset()
-            replay_buffer.insert(timestep, None)
+        buff_idx = step % num_workers
+        if step >= warmstart_steps // num_workers and replay_buffers[buff_idx].is_ready():
+            transitions = replay_buffers[buff_idx].sample()
+            agent, metrics = agent.update(transitions)
+            if step % log_interval == 0:
+                experiment.log(utils.prefix_dict("train", metrics), step=step)
 
-        if i >= warmstart_steps:
-            if replay_buffer.is_ready():
-                transitions = replay_buffer.sample()
-                agent, metrics = agent.update(transitions)
-                if i % log_interval == 0:
-                    experiment.log(utils.prefix_dict("train", metrics), step=i)
+            if checkpoint_interval >= 0 and step % checkpoint_interval == 0:
+                print("Checkpointing!")
+                experiment.save_checkpoint(agent, step=step)
 
-        if checkpoint_interval >= 0 and i % checkpoint_interval == 0:
-            experiment.save_checkpoint(agent, step=i)
+            if step % log_interval == 0:
+                experiment.log({"train/fps": int(step / (time.time() - start_time))}, step=step)
 
-        if i % log_interval == 0:
-            experiment.log({"train/fps": int(i / (time.time() - start_time))}, step=i)
+            if resets and step % reset_interval == 0:
+                agent = agent_fn(env)
 
-        if resets and i % reset_interval == 0:
-            agent = agent_fn(env)
+        timesteps = [pipe.recv() for pipe in pipes]
+        for i in range(len(timesteps)):
+            timestep, action = timesteps[i], actions[i]
+            replay_buffers[i].insert(timestep, action)
 
+            if timestep.last():
+                stats, timestep = pipes[i].recv()
+                experiment.log(utils.prefix_dict("train", stats), step=step)
+                replay_buffers[i].insert(timestep, None)
+                timesteps[i] = timestep
+
+    for proc in procs:
+        proc.terminate()
     # Save final checkpoint and replay buffer.
     experiment.save_checkpoint(agent, step=max_steps, overwrite=True)
     utils.atomic_save(experiment.data_dir / "replay_buffer.pkl", replay_buffer.data)

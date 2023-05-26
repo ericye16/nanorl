@@ -1,5 +1,6 @@
 """Train a SAC agent on dm_control suite tasks."""
 
+from functools import partial
 import time
 from dataclasses import asdict, dataclass
 from concurrent import futures
@@ -46,6 +47,8 @@ class Args:
     """Whether to periodically reset the actor / critic layers."""
     init_from_checkpoint: Optional[str] = None
     """Path to a checkpoint to initialize the agent from."""
+    num_workers: int = 1
+    """Number of workers to use for parallel environment rollouts."""
 
     # Replay buffer configuration.
     replay_capacity: int = 1_000_000
@@ -98,6 +101,75 @@ class Args:
     agent_config: SACConfig = SACConfig()
 
 
+def agent_fn(env: dm_env.Environment, *, args) -> SAC:
+    agent = SAC.initialize(
+        spec=specs.EnvironmentSpec.make(env),
+        config=args.agent_config,
+        seed=args.seed,
+        discount=args.discount,
+    )
+
+    if args.init_from_checkpoint is not None:
+        ckpt_exp = Experiment(Path(args.init_from_checkpoint)).assert_exists()
+        agent = ckpt_exp.restore_checkpoint(agent)
+
+    return agent
+
+
+def replay_fn(env: dm_env.Environment, *, args) -> replay.ReplayBuffer:
+    if args.offline_dataset is not None:
+        offline_dataset = Path(args.offline_dataset)
+        if not offline_dataset.exists():
+            raise FileNotFoundError(f"Offline dataset {offline_dataset} not found.")
+    else:
+        offline_dataset = None
+
+    utd_ratio = max(
+        args.agent_config.critic_utd_ratio, args.agent_config.actor_utd_ratio
+    )
+
+    return replay.ReplayBuffer(
+        capacity=args.replay_capacity // args.num_workers,
+        batch_size=args.batch_size * utd_ratio,
+        spec=specs.EnvironmentSpec.make(env),
+        offline_dataset=offline_dataset,
+        offline_pct=args.offline_pct,
+    )
+
+
+def env_fn(*, args, record_dir: Optional[Path] = None) -> dm_env.Environment:
+    env = suite.load(
+        environment_name=args.environment_name,
+        seed=args.seed,
+        stretch=args.stretch_factor,
+        shift=args.shift_factor,
+        **dict(
+            n_steps_lookahead=args.n_steps_lookahead,
+            trim_silence=args.trim_silence,
+            gravity_compensation=args.gravity_compensation,
+            reduced_action_space=args.reduced_action_space,
+            control_timestep=args.control_timestep,
+            wrong_press_termination=args.wrong_press_termination,
+            disable_fingering_reward=args.disable_fingering_reward,
+            disable_forearm_reward=args.disable_forearm_reward,
+            disable_colorization=args.disable_colorization,
+            disable_hand_collisions=args.disable_hand_collisions,
+            primitive_fingertip_collisions=args.primitive_fingertip_collisions,
+            change_color_on_activation=True,
+        ),
+    )
+
+    return wrap_env(
+        env=env,
+        record_dir=record_dir,
+        record_every=args.record_every,
+        frame_stack=args.frame_stack,
+        clip=args.clip,
+        camera_id=args.camera_id,
+        action_reward_observation=args.action_reward_observation,
+    )
+
+
 def main(args: Args) -> None:
     if args.name:
         run_name = args.name
@@ -123,81 +195,15 @@ def main(args: Args) -> None:
             sync_tensorboard=True,
         )
 
-    def agent_fn(env: dm_env.Environment) -> SAC:
-        agent = SAC.initialize(
-            spec=specs.EnvironmentSpec.make(env),
-            config=args.agent_config,
-            seed=args.seed,
-            discount=args.discount,
-        )
-
-        if args.init_from_checkpoint is not None:
-            ckpt_exp = Experiment(Path(args.init_from_checkpoint)).assert_exists()
-            agent = ckpt_exp.restore_checkpoint(agent)
-
-        return agent
-
-    def replay_fn(env: dm_env.Environment) -> replay.ReplayBuffer:
-        if args.offline_dataset is not None:
-            offline_dataset = Path(args.offline_dataset)
-            if not offline_dataset.exists():
-                raise FileNotFoundError(f"Offline dataset {offline_dataset} not found.")
-        else:
-            offline_dataset = None
-
-        utd_ratio = max(
-            args.agent_config.critic_utd_ratio, args.agent_config.actor_utd_ratio
-        )
-
-        return replay.ReplayBuffer(
-            capacity=args.replay_capacity,
-            batch_size=args.batch_size * utd_ratio,
-            spec=specs.EnvironmentSpec.make(env),
-            offline_dataset=offline_dataset,
-            offline_pct=args.offline_pct,
-        )
-
-    def env_fn(record_dir: Optional[Path] = None) -> dm_env.Environment:
-        env = suite.load(
-            environment_name=args.environment_name,
-            seed=args.seed,
-            stretch=args.stretch_factor,
-            shift=args.shift_factor,
-            **dict(
-                n_steps_lookahead=args.n_steps_lookahead,
-                trim_silence=args.trim_silence,
-                gravity_compensation=args.gravity_compensation,
-                reduced_action_space=args.reduced_action_space,
-                control_timestep=args.control_timestep,
-                wrong_press_termination=args.wrong_press_termination,
-                disable_fingering_reward=args.disable_fingering_reward,
-                disable_forearm_reward=args.disable_forearm_reward,
-                disable_colorization=args.disable_colorization,
-                disable_hand_collisions=args.disable_hand_collisions,
-                primitive_fingertip_collisions=args.primitive_fingertip_collisions,
-                change_color_on_activation=True,
-            ),
-        )
-
-        return wrap_env(
-            env=env,
-            record_dir=record_dir,
-            record_every=args.record_every,
-            frame_stack=args.frame_stack,
-            clip=args.clip,
-            camera_id=args.camera_id,
-            action_reward_observation=args.action_reward_observation,
-        )
-
     pool = futures.ThreadPoolExecutor(1)
 
     # Run training in a background thread.
     pool.submit(
         train_loop,
         experiment=experiment,
-        env_fn=env_fn,
-        agent_fn=agent_fn,
-        replay_fn=replay_fn,
+        env_fn=partial(env_fn, args=args),
+        agent_fn=partial(agent_fn, args=args),
+        replay_fn=partial(replay_fn, args=args),
         max_steps=args.max_steps,
         warmstart_steps=args.warmstart_steps,
         log_interval=args.log_interval,
@@ -205,6 +211,7 @@ def main(args: Args) -> None:
         resets=args.resets,
         reset_interval=args.reset_interval,
         tqdm_bar=args.tqdm_bar,
+        num_workers=args.num_workers,
     )
 
     # Continuously monitor for checkpoints and evaluate.
@@ -212,13 +219,13 @@ def main(args: Args) -> None:
         experiment=experiment,
         env_fn=lambda: MidiEvaluationWrapper(
             PianoSoundVideoWrapper(
-                env_fn(record_dir=experiment.data_dir / "videos"),
+                env_fn(args=args, record_dir=experiment.data_dir / "videos"),
                 record_every=1,
                 camera_id="piano/back",
                 record_dir=experiment.data_dir / "videos",
             )
         ),
-        agent_fn=agent_fn,
+        agent_fn=partial(agent_fn, args=args),
         num_episodes=args.eval_episodes,
         max_steps=args.max_steps,
     )
