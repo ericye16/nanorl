@@ -1,8 +1,7 @@
 import time
-from multiprocessing import Pipe, Process, Queue
+from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
 from pathlib import Path
-from queue import Empty
 from typing import Any, Callable, Sequence
 
 import dm_env
@@ -71,6 +70,8 @@ def train_loop(
         if step < warmstart_steps // num_workers:
             actions = [spec.sample_action(random_state=env.random_state) for _ in timesteps]
         else:
+            # for ts in timesteps:
+                # print("observation:", ts.observation.shape)
             agent, actions = agent.sample_actions(jnp.stack([ts.observation for ts in timesteps]))
 
         for action, pipe in zip(actions, pipes):

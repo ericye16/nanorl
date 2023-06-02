@@ -12,6 +12,7 @@ import numpy as np
 import optax
 from flax import struct
 from flax.training.train_state import TrainState
+import trax.models.transformer
 
 from nanorl import agent
 from nanorl.distributions import TanhNormal
@@ -66,6 +67,7 @@ class SACConfig:
     backup_entropy: bool = True
     critic_utd_ratio: int = 1
     actor_utd_ratio: int = 1
+    use_transformer: bool = False
 
 
 class SAC(agent.Agent):
@@ -104,12 +106,17 @@ class SAC(agent.Agent):
         rng = jax.random.PRNGKey(seed)
         rng, actor_key, critic_key, temp_key = jax.random.split(rng, 4)
 
-        actor_base_cls = partial(
-            MLP,
-            hidden_dims=config.hidden_dims,
-            activation=getattr(nn, config.activation),
-            activate_final=True,
-        )
+        if config.use_transformer:
+            actor_base_cls = partial(
+
+            )
+        else:
+            actor_base_cls = partial(
+                MLP,
+                hidden_dims=config.hidden_dims,
+                activation=getattr(nn, config.activation),
+                activate_final=True,
+            )
         actor_def = TanhNormal(actor_base_cls, action_dim)
         actor_params = actor_def.init(actor_key, observations)["params"]
         actor = TrainState.create(
