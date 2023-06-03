@@ -18,6 +18,7 @@ LoggerFn = Callable[[], Any]
 
 
 def environment_worker(env_fn: EnvFn, pipe: Connection):
+    print("env worker")
     env = env_fn()
     timestep = env.reset()
     pipe.send(timestep)
@@ -70,9 +71,7 @@ def train_loop(
         if step < warmstart_steps // num_workers:
             actions = [spec.sample_action(random_state=env.random_state) for _ in timesteps]
         else:
-            # for ts in timesteps:
-                # print("observation:", ts.observation.shape)
-            agent, actions = agent.sample_actions(jnp.stack([ts.observation for ts in timesteps]))
+            agent, actions = agent.sample_actions([ts.observation for ts in timesteps])
 
         for action, pipe in zip(actions, pipes):
             pipe.send(action)

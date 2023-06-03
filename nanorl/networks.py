@@ -219,14 +219,46 @@ def MusicTransformerEncoder(vocab_size,
 
 class TransformerAnd(nn.Module):
     hidden_dim: int
+    n_layers: int
     dropout_rate: Optional[float] = None
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
+    def __call__(self, x, training: bool = False) -> jnp.ndarray:
         # TODO: extract the notes into the correct format and figure out how we're going to
         # push the state in
-        x = TransformerDecoder(d_model=32, n_layers=2, mode='train' if training else None)(x)
-        return x
+        # x = TransformerDecoder(d_model=32, n_layers=2, mode='train' if training else None)(x)
+        goal_states = x["goal"]
+        fixed_state = jnp.concatenate(list(jnp.atleast_1d(x[f]) for f in x if f != "goal"))
+        print("goal_state", goal_states.shape)
+        print("fixed state", fixed_state.shape)
+        note_timesteps, note_positions = goal_states.nonzero()
+        if len(note_positions) == 0:
+            print("no bitches?")
+            return jnp.zeros((self.hidden_dim))
+        print("note positions:", note_positions)
+        note_embeddings = nn.Embed(num_embeddings=89, features=self.hidden_dim, name="emb1")(note_positions)
+        lookahead_length = goal_states.shape[1]
+        note_position_embeddings = note_timesteps / float(lookahead_length)
+        print(note_embeddings.shape)
+        print(note_position_embeddings.shape)
+        combined_embeddings = jnp.concatenate((note_embeddings, note_position_embeddings), axis=0)
+        num_notes = combined_embeddings.shape[0]
+        reepated_fixed_state = fixed_state.repeat(repeats=num_notes, axis=0)
+        y = jnp.concatenate((combined_embeddings, reepated_fixed_state), axis=0)
+        y = nn.Dropout(rate=self.dropout_rate, name="dropout1")(y)
+        # for enc_layer in range(self.n_layers):
+        #     y = nn.En
+
+
+
+        # for (note_timestep, note_played) in np.transpose(goal_states.nonzero()):
+        #     print("nt, np", note_timestep, note_played)
+        #     # print("goal_state ", goal_state)
+            # goal_embeddings = tl.Embedding(vocab_size=89, d_feature=self.hidden_dim)(note_played)
+            # y = tl.Dropout(rate=self.dropout_rate)(goal_embeddings)
+            
+
+        return note_embeddings
 
 
 class MLP(nn.Module):

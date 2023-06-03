@@ -16,7 +16,7 @@ import trax.models.transformer
 
 from nanorl import agent
 from nanorl.distributions import TanhNormal
-from nanorl.networks import MLP, Ensemble, StateActionValue, subsample_ensemble
+from nanorl.networks import MLP, Ensemble, StateActionValue, TransformerAnd, subsample_ensemble
 from nanorl.specs import EnvironmentSpec, zeros_like
 from nanorl.types import LogDict, Transition
 
@@ -33,12 +33,13 @@ class Temperature(nn.Module):
         return jnp.exp(log_temp)
 
 
-@partial(jax.jit, static_argnames="apply_fn")
+# @partial(jax.jit, static_argnames="apply_fn")
 def _sample_actions(
     rng, apply_fn, params, observations: np.ndarray
 ) -> tuple[jnp.ndarray, Any]:
     key, rng = jax.random.split(rng)
-    dist = apply_fn({"params": params}, observations)
+    print("observations: ", observations)
+    dist = jnp.stack([apply_fn({"params": params}, observation) for observation in observations])
     return dist.sample(seed=key), rng
 
 
@@ -108,7 +109,9 @@ class SAC(agent.Agent):
 
         if config.use_transformer:
             actor_base_cls = partial(
-
+                TransformerAnd,
+                hidden_dim=config.hidden_dims[0],
+                n_layers=3,
             )
         else:
             actor_base_cls = partial(
@@ -135,7 +138,8 @@ class SAC(agent.Agent):
         )
         critic_cls = partial(StateActionValue, base_cls=critic_base_cls)
         critic_def = Ensemble(critic_cls, num=config.num_qs)
-        critic_params = critic_def.init(critic_key, observations, actions)["params"]
+        observations_flattened = np.concatenate([np.atleast_1d(observation.ravel()) for observation in observations.values()])
+        critic_params = critic_def.init(critic_key, observations_flattened, actions)["params"]
         critic = TrainState.create(
             apply_fn=critic_def.apply,
             params=critic_params,
