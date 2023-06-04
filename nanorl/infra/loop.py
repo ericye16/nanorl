@@ -1,17 +1,16 @@
-from multiprocessing import Pipe, Process, Queue
-from queue import Empty
 import time
-from pathlib import Path
-from typing import Any, Callable
+from multiprocessing import Pipe, Process, Queue
 from multiprocessing.connection import Connection
+from pathlib import Path
+from queue import Empty
+from typing import Any, Callable, Sequence
 
-from jax import numpy as jnp
 import dm_env
 import tqdm
+from jax import numpy as jnp
+
 from nanorl import agent, replay, specs
-
 from nanorl.infra import Experiment, utils
-
 
 EnvFn = Callable[[], dm_env.Environment]
 AgentFn = Callable[[dm_env.Environment], agent.Agent]
@@ -35,7 +34,7 @@ def environment_worker(env_fn: EnvFn, pipe: Connection):
 
 def train_loop(
     experiment: Experiment,
-    env_fn: EnvFn,
+    env_fns: Sequence[EnvFn],
     agent_fn: AgentFn,
     replay_fn: ReplayFn,
     max_steps: int,
@@ -47,14 +46,19 @@ def train_loop(
     tqdm_bar: bool,
     num_workers: int,
 ) -> None:
-    env = env_fn()
+    env = env_fns[0]()
     agent = agent_fn(env)
-    replay_buffers = [replay_fn(env) for _ in range(num_workers)]
-
     spec = specs.EnvironmentSpec.make(env)
 
+    num_workers = num_workers * len(env_fns)
+    replay_buffers = [replay_fn(env) for _ in range(num_workers)]
     pipes, child_pipes = zip(*[Pipe() for _ in range(num_workers)])
-    procs = [Process(target=environment_worker, args=(env_fn, pipe)) for pipe in child_pipes]
+    procs = [
+        Process(
+            target=environment_worker,
+            args=(env_fns[i % len(env_fns)], pipe)
+        ) for i, pipe in enumerate(child_pipes)
+    ]
     for p in procs:
         p.start()
 
@@ -109,13 +113,15 @@ def train_loop(
 
 def eval_loop(
     experiment: Experiment,
-    env_fn: EnvFn,
+    env_fn: Callable[[str], dm_env.Environment],
     agent_fn: AgentFn,
     num_episodes: int,
     max_steps: int,
+    env_names: Sequence[str],
 ) -> None:
-    env = env_fn()
-    agent = agent_fn(env)
+
+    envs = [env_fn(env_name) for env_name in env_names]
+    agent = agent_fn(envs[0])
 
     last_checkpoint = None
     while True:
@@ -130,18 +136,19 @@ def eval_loop(
             print(f"Evaluating checkpoint at iteration {i}")
 
             # Eval!
-            for _ in range(num_episodes):
-                timestep = env.reset()
-                while not timestep.last():
-                    timestep = env.step(agent.eval_actions(timestep.observation))
+            for env, env_name in zip(envs, env_names):
+                for _ in range(num_episodes):
+                    timestep = env.reset()
+                    while not timestep.last():
+                        timestep = env.step(agent.eval_actions(timestep.observation))
 
-            # Log statistics.
-            log_dict = utils.prefix_dict("eval", env.get_statistics())
-            log_dict.update(utils.prefix_dict("eval_music", env.get_musical_metrics()))
-            experiment.log(log_dict, step=i)
+                # Log statistics.
+                log_dict = utils.prefix_dict(f"eval/{env_name}", env.get_statistics())
+                log_dict.update(utils.prefix_dict(f"eval_music/{env_name}", env.get_musical_metrics()))
+                experiment.log(log_dict, step=i)
 
-            # Maybe log video.
-            experiment.log_video(env.latest_filename, step=i)
+                # Maybe log video.
+                # experiment.log_video(env.latest_filename, step=i)
 
             print(f"Done evaluating checkpoint {i}")
             last_checkpoint = checkpoint

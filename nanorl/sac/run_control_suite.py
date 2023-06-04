@@ -1,21 +1,21 @@
 """Train a SAC agent on dm_control suite tasks."""
 
-from functools import partial
 import time
-from dataclasses import asdict, dataclass
 from concurrent import futures
+from dataclasses import asdict, dataclass, field
+from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+
 import dm_env
 import tyro
 
 # from dm_control import suite
 from robopianist import suite
+from robopianist.wrappers import MidiEvaluationWrapper, PianoSoundVideoWrapper
 
-from nanorl import replay, specs
-from nanorl import SAC, SACConfig
-from nanorl.infra import seed_rngs, Experiment, train_loop, eval_loop, wrap_env
-from robopianist.wrappers import PianoSoundVideoWrapper, MidiEvaluationWrapper
+from nanorl import SAC, SACConfig, replay, specs
+from nanorl.infra import Experiment, eval_loop, seed_rngs, train_loop, wrap_env
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,8 @@ class Args:
     """Whether to periodically reset the actor / critic layers."""
     init_from_checkpoint: Optional[str] = None
     """Path to a checkpoint to initialize the agent from."""
+    ft: Optional[str] = None
+    """Path to a checkpoint to initialize the agent from for finetuning."""
     num_workers: int = 1
     """Number of workers to use for parallel environment rollouts."""
 
@@ -68,7 +70,8 @@ class Args:
     mode: str = "online"
 
     # Task configuration.
-    environment_name: str = "RoboPianist-debug-TwinkleTwinkleRousseau-v0"
+    pretrain_envs: List[str] = field(default_factory=lambda: [])
+    eval_envs: List[str] = field(default_factory=lambda: [])
     n_steps_lookahead: int = 10
     trim_silence: bool = False
     gravity_compensation: bool = False
@@ -101,7 +104,7 @@ class Args:
     agent_config: SACConfig = SACConfig()
 
 
-def agent_fn(env: dm_env.Environment, *, args) -> SAC:
+def agent_fn(env: dm_env.Environment, *, args, training: bool = True) -> SAC:
     agent = SAC.initialize(
         spec=specs.EnvironmentSpec.make(env),
         config=args.agent_config,
@@ -109,9 +112,24 @@ def agent_fn(env: dm_env.Environment, *, args) -> SAC:
         discount=args.discount,
     )
 
-    if args.init_from_checkpoint is not None:
-        ckpt_exp = Experiment(Path(args.init_from_checkpoint)).assert_exists()
-        agent = ckpt_exp.restore_checkpoint(agent)
+    if training:
+        if args.init_from_checkpoint is not None:
+            ckpt_exp = Experiment(Path(args.init_from_checkpoint)).assert_exists()
+            agent = ckpt_exp.restore_checkpoint(agent)
+        elif args.ft is not None:
+            agent_copy = SAC.initialize(
+                spec=specs.EnvironmentSpec.make(env),
+                config=args.agent_config,
+                seed=args.seed,
+                discount=args.discount,
+            )
+            ckpt_exp = Experiment(Path(args.ft)).assert_exists()
+            agent_copy = ckpt_exp.restore_checkpoint(agent_copy)
+            agent = agent.replace(
+                actor=agent_copy.actor,
+                critic=agent_copy.critic,
+                target_critic=agent.target_critic,
+            )
 
     return agent
 
@@ -137,9 +155,9 @@ def replay_fn(env: dm_env.Environment, *, args) -> replay.ReplayBuffer:
     )
 
 
-def env_fn(*, args, record_dir: Optional[Path] = None) -> dm_env.Environment:
+def env_fn(*, args, environment_name: str = None, record_dir: Optional[Path] = None) -> dm_env.Environment:
     env = suite.load(
-        environment_name=args.environment_name,
+        environment_name=environment_name,
         seed=args.seed,
         stretch=args.stretch_factor,
         shift=args.shift_factor,
@@ -171,10 +189,7 @@ def env_fn(*, args, record_dir: Optional[Path] = None) -> dm_env.Environment:
 
 
 def main(args: Args) -> None:
-    if args.name:
-        run_name = args.name
-    else:
-        run_name = f"SAC-{args.environment_name}-{args.seed}-{time.time()}"
+    run_name = "-".join(filter(bool, ["SAC", args.name, str(args.seed), str(time.time())]))
 
     # Seed RNGs.
     seed_rngs(args.seed)
@@ -196,12 +211,31 @@ def main(args: Args) -> None:
         )
 
     pool = futures.ThreadPoolExecutor(1)
-
-    # Run training in a background thread.
+    # Run eval in a background thread. Eval continuously monitor for checkpoints and evaluates them
     pool.submit(
-        train_loop,
+        eval_loop,
         experiment=experiment,
-        env_fn=partial(env_fn, args=args),
+        env_fn=lambda env: MidiEvaluationWrapper(
+            env_fn(args=args, environment_name=env),
+            # PianoSoundVideoWrapper(
+            #     env_fn(args=args, record_dir=experiment.data_dir / "videos"),
+            #     record_every=1,
+            #     camera_id="piano/back",
+            #     record_dir=experiment.data_dir / "videos",
+            # )
+        ),
+        agent_fn=partial(agent_fn, args=args, training=False),
+        num_episodes=args.eval_episodes,
+        max_steps=args.max_steps,
+        env_names=args.eval_envs,
+    )
+
+    train_loop(
+        experiment=experiment,
+        env_fns=[
+            partial(env_fn, args=args, environment_name=env)
+            for env in args.pretrain_envs
+        ],
         agent_fn=partial(agent_fn, args=args),
         replay_fn=partial(replay_fn, args=args),
         max_steps=args.max_steps,
@@ -212,22 +246,6 @@ def main(args: Args) -> None:
         reset_interval=args.reset_interval,
         tqdm_bar=args.tqdm_bar,
         num_workers=args.num_workers,
-    )
-
-    # Continuously monitor for checkpoints and evaluate.
-    eval_loop(
-        experiment=experiment,
-        env_fn=lambda: MidiEvaluationWrapper(
-            PianoSoundVideoWrapper(
-                env_fn(args=args, record_dir=experiment.data_dir / "videos"),
-                record_every=1,
-                camera_id="piano/back",
-                record_dir=experiment.data_dir / "videos",
-            )
-        ),
-        agent_fn=partial(agent_fn, args=args),
-        num_episodes=args.eval_episodes,
-        max_steps=args.max_steps,
     )
 
     # Clean up.
