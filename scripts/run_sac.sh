@@ -1,7 +1,6 @@
 #!/bin/bash
 
 MUJOCO_GL=egl XLA_PYTHON_CLIENT_PREALLOCATE=false PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-    --environment_name RoboPianist-debug-TwinkleTwinkleLittleStar-v0 \
     --root-dir ~/nanorl/runs/ \
     --warmstart-steps 5000 \
     --checkpoint_interval 10000 \
@@ -20,7 +19,7 @@ MUJOCO_GL=egl XLA_PYTHON_CLIENT_PREALLOCATE=false PROTOCOL_BUFFERS_PYTHON_IMPLEM
     --eval-episodes 1 \
     --camera-id "piano/back" \
     --tqdm-bar \
-    --num_workers 10 \
+    --num_workers 19 \
     "$@"
     # --environment_name RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0
     # --init_from_checkpoint /data/nanorl/runs/SAC-RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0-42-1684391655.3145144/checkpoint_1000000 \

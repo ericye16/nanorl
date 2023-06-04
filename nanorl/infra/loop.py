@@ -7,6 +7,7 @@ from multiprocessing.connection import Connection
 
 from jax import numpy as jnp
 import dm_env
+from robopianist import suite
 import tqdm
 from nanorl import agent, replay, specs
 
@@ -21,16 +22,26 @@ LoggerFn = Callable[[], Any]
 
 def environment_worker(env_fn: EnvFn, pipe: Connection):
     env = env_fn()
+    stuff = []
     timestep = env.reset()
+    stuff.append((timestep, None))
     pipe.send(timestep)
     while True:
         action = pipe.recv()
+        print("action shape 0", action.shape)
         timestep = env.step(action)
         pipe.send(timestep)
+        stuff.append((timestep, action))
         if timestep.last():
             stats = env.get_statistics()
+            actual_keys_played = env.task.actual_keys_played
             timestep = env.reset()
             pipe.send((stats, timestep))
+            stuff.append((timestep, None))
+            stuff.append(stats)
+            stuff.append(actual_keys_played)
+            pipe.send(stuff)
+            stuff = []
 
 
 def train_loop(
@@ -92,6 +103,8 @@ def train_loop(
         timesteps = [pipe.recv() for pipe in pipes]
         for i in range(len(timesteps)):
             timestep, action = timesteps[i], actions[i]
+            # print("timestep", timestep)
+            print("action shape 1", action.shape)
             replay_buffers[i].insert(timestep, action)
 
             if timestep.last():
@@ -99,6 +112,21 @@ def train_loop(
                 experiment.log(utils.prefix_dict("train", stats), step=step)
                 replay_buffers[i].insert(timestep, None)
                 timesteps[i] = timestep
+                # fun replay stuff
+                all_timesteps = pipes[i].recv()
+                actual_keys_played = all_timesteps[-1]
+                all_timesteps = all_timesteps[:-2]
+                replay_env = env_fn(replay_keys=actual_keys_played)
+                replay_timestep = replay_env.reset()
+                replay_buffers[i].insert(replay_timestep, None)
+                # print("at: ", all_timesteps)
+                for replayed_timestep, action in all_timesteps:
+                    if action is None:
+                        break
+                    print("action shape 2", action.shape)
+                    new_timestep = replay_env.step(action)
+                    replay_buffers[i].insert(new_timestep, action)
+                                
 
     for proc in procs:
         proc.terminate()

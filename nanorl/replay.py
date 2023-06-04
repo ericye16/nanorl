@@ -51,6 +51,9 @@ class _CircularBuffer:
         self._prev = self._latest
         self._action = action
         self._latest = timestep
+        if not hasattr(timestep, "observation"):
+            print("what are you doing, ", timestep)
+            raise ValueError
 
         if action is not None:
             self._buffer[self._index] = (

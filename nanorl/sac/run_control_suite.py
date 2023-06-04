@@ -137,9 +137,10 @@ def replay_fn(env: dm_env.Environment, *, args) -> replay.ReplayBuffer:
     )
 
 
-def env_fn(*, args, record_dir: Optional[Path] = None) -> dm_env.Environment:
+def env_fn(*, args, record_dir: Optional[Path] = None, replay_keys = None) -> dm_env.Environment:
     env = suite.load(
         environment_name=args.environment_name,
+        replay_keys=replay_keys,
         seed=args.seed,
         stretch=args.stretch_factor,
         shift=args.shift_factor,
@@ -198,8 +199,8 @@ def main(args: Args) -> None:
     pool = futures.ThreadPoolExecutor(1)
 
     # Run training in a background thread.
-    pool.submit(
-        train_loop,
+    # pool.submit(
+    train_loop(
         experiment=experiment,
         env_fn=partial(env_fn, args=args),
         agent_fn=partial(agent_fn, args=args),
