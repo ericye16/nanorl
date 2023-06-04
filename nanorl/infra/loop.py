@@ -28,7 +28,7 @@ def environment_worker(env_fn: EnvFn, pipe: Connection):
     pipe.send(timestep)
     while True:
         action = pipe.recv()
-        print("action shape 0", action.shape)
+        # print("action shape 0", action.shape)
         timestep = env.step(action)
         pipe.send(timestep)
         stuff.append((timestep, action))
@@ -104,7 +104,7 @@ def train_loop(
         for i in range(len(timesteps)):
             timestep, action = timesteps[i], actions[i]
             # print("timestep", timestep)
-            print("action shape 1", action.shape)
+            # print("action shape 1", action.shape)
             replay_buffers[i].insert(timestep, action)
 
             if timestep.last():
@@ -118,12 +118,13 @@ def train_loop(
                 all_timesteps = all_timesteps[:-2]
                 replay_env = env_fn(replay_keys=actual_keys_played)
                 replay_timestep = replay_env.reset()
+                # this one doesn't work for some reason
                 replay_buffers[i].insert(replay_timestep, None)
                 # print("at: ", all_timesteps)
                 for replayed_timestep, action in all_timesteps:
                     if action is None:
                         break
-                    print("action shape 2", action.shape)
+                    # print("action shape 2", action.shape)
                     new_timestep = replay_env.step(action)
                     replay_buffers[i].insert(new_timestep, action)
                                 

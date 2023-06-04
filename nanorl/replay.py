@@ -54,6 +54,9 @@ class _CircularBuffer:
         if not hasattr(timestep, "observation"):
             print("what are you doing, ", timestep)
             raise ValueError
+        if timestep.observation.shape != (1170,):
+            print("what are you doing, 2", timestep.observation)
+            raise ValueError
 
         if action is not None:
             self._buffer[self._index] = (
@@ -80,6 +83,7 @@ class _CircularBuffer:
         else:
             indices = random.sample(range(len(self)), batch_size)
             obs_tm1, a_tm1, r_t, d_t, obs_t = zip(*[self._buffer[i] for i in indices])
+        print("shapes",[ obs.shape for obs in obs_tm1 if obs.shape != (1170,)])
         return Transition(
             observation=np.stack(obs_tm1),
             action=np.asarray(a_tm1),
