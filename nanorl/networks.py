@@ -1,264 +1,71 @@
 """Neural network module."""
 
-from typing import Any, Callable, Optional, Sequence, Type
+from typing import Callable, Optional, Sequence, Type
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
-import numpy as np
-from trax.models.transformer import TransformerDecoder
-from trax import layers as tl
-from trax.layers import base
+from transformers import BertConfig
+from transformers.models.bert.modeling_flax_bert import (
+    FlaxBertEmbeddings,
+    FlaxBertEncoder,
+)
 
 from nanorl import types
 
 default_init = nn.initializers.xavier_uniform
 
-# Shamelessly copied from Trax
-# Defaults used across Transformer variants.
-MODE = 'train'
-D_MODEL = 512
-D_FF = 2048
-N_LAYERS = 6
-N_HEADS = 8
-MAX_SEQUENCE_LENGTH = 2048
-DROPOUT_RATE = .1
-DROPOUT_SHARED_AXES = None
-FF_ACTIVATION_TYPE = tl.Relu
-
-def _FeedForwardBlock(d_model,
-                      d_ff,
-                      dropout,
-                      dropout_shared_axes,
-                      mode,
-                      activation):
-    """Returns a list of layers that implements a feedforward block.
-
-    Args:
-        d_model: Last/innermost dimension of activation arrays at most points in
-            the model, including the initial embedding output.
-        d_ff: Last/innermost dimension of special (typically wider)
-            :py:class:`Dense` layer in the feedforward part of each block.
-        dropout: Stochastic rate (probability) for dropping an activation value
-            when applying dropout within a block.
-        dropout_shared_axes: Tensor axes on which to share a dropout mask.
-            Sharing along batch and sequence axes (``dropout_shared_axes=(0,1)``)
-            is a useful way to save memory and apply consistent masks to activation
-            vectors at different sequence positions.
-        mode: If ``'train'``, each block will include dropout; else, it will
-            pass all values through unaltered.
-        activation: Type of activation function at the end of each block; must
-            be an activation-type subclass of :py:class:`Layer`.
-
-    Returns:
-        A list of layers that maps vectors to vectors.
-    """
-    def _Dropout():
-        return tl.Dropout(rate=dropout, shared_axes=dropout_shared_axes, mode=mode)
-
-    return [
-      tl.Dense(d_ff),
-      activation(),
-      _Dropout(),
-      tl.Dense(d_model),
-    ]
-
-def _EncoderBlock(d_model,
-                  d_ff,
-                  n_heads,
-                  dropout,
-                  dropout_shared_axes,
-                  mode,
-                  ff_activation):
-    """Returns a list of layers that implements a Transformer encoder block.
-
-    The input to the block is a pair (activations, mask) where the mask was
-    created from the original source tokens to prevent attending to the padding
-    part of the input. The block's outputs are the same type/shape as its inputs,
-    so that multiple blocks can be chained together.
-
-    Args:
-        d_model: Last/innermost dimension of activation arrays at most points in
-            the model, including the initial embedding output.
-        d_ff: Last/innermost dimension of special (typically wider)
-            :py:class:`Dense` layer in the feedforward part of each block.
-        n_heads: Number of attention heads.
-        dropout: Stochastic rate (probability) for dropping an activation value
-            when applying dropout within encoder blocks. The same rate is also used
-            for attention dropout in encoder blocks.
-        dropout_shared_axes: Tensor axes on which to share a dropout mask.
-            Sharing along batch and sequence axes (``dropout_shared_axes=(0,1)``)
-            is a useful way to save memory and apply consistent masks to activation
-            vectors at different sequence positions.
-        mode: If ``'train'``, each block will include dropout; else, it will
-            pass all values through unaltered.
-        ff_activation: Type of activation function at the end of each block; must
-            be an activation-type subclass of :py:class:`Layer`.
-
-    Returns:
-        A list of layers that act in series as a (repeatable) encoder block.
-    """
-    def _Attention():
-        return tl.Attention(d_model, n_heads=n_heads, dropout=dropout, mode=mode)
-
-    def _Dropout():
-        return tl.Dropout(rate=dropout, shared_axes=dropout_shared_axes, mode=mode)
-
-    def _FFBlock():
-        return _FeedForwardBlock(d_model, d_ff, dropout, dropout_shared_axes, mode,
-                                ff_activation)
-
-    return [
-        tl.Residual(
-            tl.LayerNorm(),
-            _Attention(),
-            _Dropout(),
-        ),
-        tl.Residual(
-            tl.LayerNorm(),
-            _FFBlock(),
-            _Dropout(),
-        ),
-    ]
-
-
-class MusicalPositionalEncoding(base.Layer):
-    def __init__(self, max_len=2048):
-        super().__init__()
-        self._max_len = max_len
-
-    def init_weights_and_state(self, input_signature):
-        super().init_weights_and_state(input_signature)
-        d_feature = input_signature.shape[-1]
-        pe = np.linspace(0.0, 1.0, self._max_len, dtype=np.float32)
-        pe = np.broadcast_to(pe, (self._max_len, d_feature))
-        w = jnp.array(pe)
-        self.weights = w
-    
-    def forward(self, inputs):
-        notes, indices = inputs
-        assert notes.shape[1] == indices.shape[1]
-        px = self.weights[indices, :]
-        assert notes.shape == px.shape
-        return px + notes
-   
-
-
-def MusicTransformerEncoder(vocab_size,
-                       n_classes=10,
-                       d_model=D_MODEL,
-                       d_ff=D_FF,
-                       n_layers=N_LAYERS,
-                       n_heads=N_HEADS,
-                       max_len=MAX_SEQUENCE_LENGTH,
-                       dropout=DROPOUT_RATE,
-                       dropout_shared_axes=DROPOUT_SHARED_AXES,
-                       mode=MODE,
-                       ff_activation=FF_ACTIVATION_TYPE):
-  """Returns a Transformer encoder suitable for N-way classification.
-
-  This model maps tokenized text to N-way (``n_classes``) activations:
-
-    - input: Array representing a batch of text strings via token IDs plus
-      padding markers; shape is (batch_size, sequence_length), where
-      sequence_length <= ``max_len``. Array elements are integers in
-      ``range(vocab_size)``, and 0 values mark padding positions.
-
-    - output: Array representing a batch of raw (non-normalized) activations
-      over ``n_classes`` categories; shape is (batch_size, ``n_classes``).
-
-  Args:
-    vocab_size: Input vocabulary size -- each element of the input array
-        should be an integer in ``range(vocab_size)``. These integers typically
-        represent token IDs from a vocabulary-based tokenizer.
-    n_classes: Last/innermost dimension of output arrays, suitable for N-way
-        classification.
-    d_model: Last/innermost dimension of activation arrays at most points in
-        the model, including the initial embedding output.
-    d_ff: Last/innermost dimension of special (typically wider)
-        :py:class:`Dense` layer in the feedforward part of each encoder block.
-    n_layers: Number of encoder blocks. Each block includes attention, dropout,
-        residual, layer-norm, feedforward (:py:class:`Dense`), and activation
-        layers.
-    n_heads: Number of attention heads.
-    max_len: Maximum symbol length for positional encoding.
-    dropout: Stochastic rate (probability) for dropping an activation value
-        when applying dropout within encoder blocks. The same rate is also
-        used for attention dropout in encoder blocks.
-    dropout_shared_axes: Tensor axes on which to share a dropout mask.
-        Sharing along batch and sequence axes (``dropout_shared_axes=(0,1)``)
-        is a useful way to save memory and apply consistent masks to activation
-        vectors at different sequence positions.
-    mode: If ``'train'``, each encoder block will include dropout; else, it
-        will pass all values through unaltered.
-    ff_activation: Type of activation function at the end of each encoder
-        block; must be an activation-type subclass of :py:class:`Layer`.
-
-  Returns:
-    A Transformer model that maps strings (conveyed by token IDs) to
-    raw (non-normalized) activations over a range of output classes.
-  """
-  def _Dropout():
-    return tl.Dropout(rate=dropout, shared_axes=dropout_shared_axes, mode=mode)
-
-  def _EncBlock():
-    return _EncoderBlock(d_model, d_ff, n_heads, dropout, dropout_shared_axes,
-                         mode, ff_activation)
-
-  return tl.Serial(
-    #   tl.Branch([], tl.PaddingMask()),  # Creates masks from copy of the tokens.
-      tl.Embedding(vocab_size, d_model),
-      _Dropout(),
-    #   tl.PositionalEncoding(max_len=max_len),
-      [_EncBlock() for _ in range(n_layers)],
-    #   tl.Select([0], n_in=2),  # Drops the masks.
-      tl.LayerNorm(),
-      tl.Mean(axis=1),
-      tl.Dense(n_classes),
-  )
 
 class TransformerAnd(nn.Module):
-    hidden_dim: int
-    n_layers: int
-    dropout_rate: Optional[float] = None
+    config: BertConfig
+    dtype: jnp.dtype = jnp.float32
+    sequence_len: int = 11
+    obs_ts_dim: int = 89
+
+    def setup(self):
+        self.position_embeddings = nn.Embed(
+            self.config.max_position_embeddings,
+            self.config.hidden_size,
+            embedding_init=jax.nn.initializers.normal(stddev=self.config.initializer_range),
+            dtype=self.dtype,
+        )
+        self.encoder = FlaxBertEncoder(
+            self.config,
+            dtype=self.dtype,
+            gradient_checkpointing=False,
+        )
+        self.LayerNorm = nn.LayerNorm(epsilon=self.config.layer_norm_eps, dtype=self.dtype)
+        self.dropout = nn.Dropout(rate=self.config.hidden_dropout_prob)
 
     @nn.compact
-    def __call__(self, x, training: bool = False) -> jnp.ndarray:
-        # TODO: extract the notes into the correct format and figure out how we're going to
-        # push the state in
-        # x = TransformerDecoder(d_model=32, n_layers=2, mode='train' if training else None)(x)
-        goal_states = x["goal"]
-        fixed_state = jnp.concatenate(list(jnp.atleast_1d(x[f]) for f in x if f != "goal"))
-        print("goal_state", goal_states.shape)
-        print("fixed state", fixed_state.shape)
-        note_timesteps, note_positions = goal_states.nonzero()
-        if len(note_positions) == 0:
-            print("no bitches?")
-            return jnp.zeros((self.hidden_dim))
-        print("note positions:", note_positions)
-        note_embeddings = nn.Embed(num_embeddings=89, features=self.hidden_dim, name="emb1")(note_positions)
-        lookahead_length = goal_states.shape[1]
-        note_position_embeddings = note_timesteps / float(lookahead_length)
-        print(note_embeddings.shape)
-        print(note_position_embeddings.shape)
-        combined_embeddings = jnp.concatenate((note_embeddings, note_position_embeddings), axis=0)
-        num_notes = combined_embeddings.shape[0]
-        reepated_fixed_state = fixed_state.repeat(repeats=num_notes, axis=0)
-        y = jnp.concatenate((combined_embeddings, reepated_fixed_state), axis=0)
-        y = nn.Dropout(rate=self.dropout_rate, name="dropout1")(y)
-        # for enc_layer in range(self.n_layers):
-        #     y = nn.En
+    def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
+        if len(x.shape) == 1:
+            x = jnp.expand_dims(x, 0)
+        goal_states_idx = self.obs_ts_dim * self.sequence_len
+        goal_states, fixed_state = x[:, :goal_states_idx], x[:, goal_states_idx:]
 
+        reshaper = lambda x: jnp.reshape(x, (self.obs_ts_dim, self.sequence_len)).T
+        goal_states = jax.vmap(reshaper)(goal_states)
+        fixed_state = jnp.expand_dims(fixed_state, 1)
+        hidden_dim = self.config.hidden_size
+        note_embeddings = nn.Dense(features=hidden_dim, name="emb_goal")(goal_states)
+        fixed_state_embeddings = nn.Dense(features=hidden_dim, name="emb_fixed")(fixed_state).repeat(self.sequence_len, axis=1)
+        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(goal_states).shape[-2]), goal_states.shape[:-1])
+        positional_embeddings = self.position_embeddings(position_ids.astype("i4"))
 
-
-        # for (note_timestep, note_played) in np.transpose(goal_states.nonzero()):
-        #     print("nt, np", note_timestep, note_played)
-        #     # print("goal_state ", goal_state)
-            # goal_embeddings = tl.Embedding(vocab_size=89, d_feature=self.hidden_dim)(note_played)
-            # y = tl.Dropout(rate=self.dropout_rate)(goal_embeddings)
-            
-
-        return note_embeddings
+        hidden_states = note_embeddings + fixed_state_embeddings + positional_embeddings
+        hidden_states = self.LayerNorm(hidden_states)
+        hidden_states = self.dropout(hidden_states, deterministic=not training)
+        hidden_state = self.encoder(
+            hidden_states,
+            attention_mask=None,
+            head_mask=None,
+            deterministic=not training,
+            output_attentions=False,
+            output_hidden_states=False,
+            return_dict=True,
+        )[0]
+        return hidden_state[:, 0, :]
 
 
 class MLP(nn.Module):

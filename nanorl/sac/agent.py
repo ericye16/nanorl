@@ -1,7 +1,6 @@
 """Soft Actor-Critic implementation."""
 
 from dataclasses import dataclass
-
 from functools import partial
 from typing import Any, Optional, Sequence
 
@@ -12,11 +11,17 @@ import numpy as np
 import optax
 from flax import struct
 from flax.training.train_state import TrainState
-import trax.models.transformer
+from transformers import BertConfig
 
 from nanorl import agent
 from nanorl.distributions import TanhNormal
-from nanorl.networks import MLP, Ensemble, StateActionValue, TransformerAnd, subsample_ensemble
+from nanorl.networks import (
+    MLP,
+    Ensemble,
+    StateActionValue,
+    TransformerAnd,
+    subsample_ensemble,
+)
 from nanorl.specs import EnvironmentSpec, zeros_like
 from nanorl.types import LogDict, Transition
 
@@ -33,13 +38,12 @@ class Temperature(nn.Module):
         return jnp.exp(log_temp)
 
 
-# @partial(jax.jit, static_argnames="apply_fn")
+@partial(jax.jit, static_argnames="apply_fn")
 def _sample_actions(
     rng, apply_fn, params, observations: np.ndarray
 ) -> tuple[jnp.ndarray, Any]:
     key, rng = jax.random.split(rng)
-    print("observations: ", observations)
-    dist = jnp.stack([apply_fn({"params": params}, observation) for observation in observations])
+    dist = apply_fn({"params": params}, observations)
     return dist.sample(seed=key), rng
 
 
@@ -92,6 +96,7 @@ class SAC(agent.Agent):
     def initialize(
         spec: EnvironmentSpec,
         config: SACConfig,
+        lookahead: int,
         seed: int = 0,
         discount: float = 0.99,
     ) -> "SAC":
@@ -110,8 +115,15 @@ class SAC(agent.Agent):
         if config.use_transformer:
             actor_base_cls = partial(
                 TransformerAnd,
-                hidden_dim=config.hidden_dims[0],
-                n_layers=3,
+                config=BertConfig(
+                    vocab_size=89,
+                    hidden_size=config.hidden_dims[0],
+                    num_hidden_layers=len(config.hidden_dims),
+                    num_attention_heads=1,
+                    intermediate_size=config.hidden_dims[0]*4,
+                    hidden_dropout_prob=0.0,
+                ),
+                sequence_len=lookahead+1,
             )
         else:
             actor_base_cls = partial(
@@ -127,24 +139,39 @@ class SAC(agent.Agent):
             params=actor_params,
             tx=optax.adam(learning_rate=config.actor_lr),
         )
+        print(f"Created actor with {sum(x.size for x in jax.tree_util.tree_leaves(actor_params))} parameters.")
 
-        critic_base_cls = partial(
-            MLP,
-            hidden_dims=config.hidden_dims,
-            activation=getattr(nn, config.activation),
-            activate_final=True,
-            dropout_rate=config.critic_dropout_rate,
-            use_layer_norm=config.critic_layer_norm,
-        )
+        if config.use_transformer:
+            critic_base_cls = partial(
+                TransformerAnd,
+                config=BertConfig(
+                    vocab_size=89,
+                    hidden_size=config.hidden_dims[0],
+                    num_hidden_layers=len(config.hidden_dims),
+                    num_attention_heads=1,
+                    intermediate_size=config.hidden_dims[0]*4,
+                    hidden_dropout_prob=config.critic_dropout_rate,
+                ),
+                sequence_len=lookahead+1,
+            )
+        else:
+            critic_base_cls = partial(
+                MLP,
+                hidden_dims=config.hidden_dims,
+                activation=getattr(nn, config.activation),
+                activate_final=True,
+                dropout_rate=config.critic_dropout_rate,
+                use_layer_norm=config.critic_layer_norm,
+            )
         critic_cls = partial(StateActionValue, base_cls=critic_base_cls)
         critic_def = Ensemble(critic_cls, num=config.num_qs)
-        observations_flattened = np.concatenate([np.atleast_1d(observation.ravel()) for observation in observations.values()])
-        critic_params = critic_def.init(critic_key, observations_flattened, actions)["params"]
+        critic_params = critic_def.init(critic_key, observations, actions)["params"]
         critic = TrainState.create(
             apply_fn=critic_def.apply,
             params=critic_params,
             tx=optax.adam(learning_rate=config.critic_lr),
         )
+        print(f"Created critic with {sum(x.size for x in jax.tree_util.tree_leaves(critic_params))} parameters.")
         target_critic_def = Ensemble(critic_cls, num=config.num_min_qs or config.num_qs)
         target_critic = TrainState.create(
             apply_fn=target_critic_def.apply,

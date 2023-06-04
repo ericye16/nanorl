@@ -8,9 +8,9 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Optional
+
 import dm_env
 import dm_env_wrappers as wrappers
-
 import numpy as np
 
 PathOrStr = str | Path
@@ -105,7 +105,7 @@ def wrap_env(
     if action_reward_observation:
         env = wrappers.ObservationActionRewardWrapper(env)
 
-    # env = wrappers.ConcatObservationWrapper(env)
+    env = wrappers.ConcatObservationWrapper(env)
 
     if frame_stack > 1:
         env = wrappers.FrameStackingWrapper(env, num_frames=frame_stack, flatten=True)

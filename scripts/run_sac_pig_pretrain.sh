@@ -1,7 +1,6 @@
 #!/bin/bash
 
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-    --init_from_checkpoint ~/cs224r/nanorl/runs/SAC-PIG-Pretrain-42-1685639621.7799435/checkpoint_73000 \
     --pretrain_envs RoboPianist-repertoire-150-ArabesqueNo1-v0 \
                     RoboPianist-repertoire-150-ArabesqueNo2-v0 \
                     RoboPianist-repertoire-150-BalladeNo1-v0 \
@@ -152,26 +151,39 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
                 RoboPianist-etude-12-GolliwoggsCakewalk-v0 \
                 RoboPianist-etude-12-PianoSonataNo21StMov-v0 \
                 RoboPianist-etude-12-PianoSonataK279InCMajor1StMov-v0 \
-    --name "PIG-Pretrain" \
+    --name "XFormer-PIG-Pretrain" \
     --root-dir ~/cs224r/nanorl/runs/ \
     --warmstart-steps 0 \
     --checkpoint_interval 1000 \
-    --max-steps 30000 \
+    --max-steps 100000 \
     --discount 0.99 \
     --agent-config.critic-dropout-rate 0.01 \
     --agent-config.critic-layer-norm \
     --agent-config.hidden-dims 256 256 256 \
-    --agent-config.actor_utd_ratio 14 \
-    --agent-config.critic_utd_ratio 14 \
     --trim-silence \
     --gravity-compensation \
     --reduced-action-space \
     --control-timestep 0.05 \
-    --n-steps-lookahead 10 \
+    --n-steps-lookahead 40 \
     --action-reward-observation \
     --primitive-fingertip-collisions \
     --eval-episodes 1 \
     --camera-id "piano/back" \
     --tqdm-bar \
     --num_workers 1 \
+    --update_period 10 \
+    --agent_config.use_transformer \
+    --agent_config.num_qs 2 \
+    --replay_capacity 1000000 \
+    --checkpoint_interval 1000 \
+    --log_interval 100 \
+    --batch_size 256 \
+    --agent_config.actor_lr 3e-4 \
+    --agent_config.critic_lr 3e-4 \
+    --agent_config.temp_lr 3e-4 \
+    --eval_episodes 1 \
     "$@"
+
+    # --agent-config.actor_utd_ratio 14 \
+    # --agent-config.critic_utd_ratio 14 \
+    # --init_from_checkpoint ~/cs224r/nanorl/runs/SAC-XFormer-PIG-Pretrain-42-1685926327.522851/checkpoint_1100 \

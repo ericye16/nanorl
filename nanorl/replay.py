@@ -207,9 +207,8 @@ def _get_size_in_bytes(n_elements: int, spec: EnvironmentSpec) -> int:
     """Caclulates the total size of `n_elements` transitions, in bytes."""
     total_size: int = 0
     # Observation and next observation.
-    for observation in spec.observation.values():
-        obs_dtype = observation.dtype
-        total_size += (np.size(observation) * obs_dtype.itemsize) * 2
+    obs_dtype = spec.observation.dtype
+    total_size += (spec.observation.shape[0] * obs_dtype.itemsize) * 2
     # Action.
     action_dtype = spec.action.dtype
     total_size += spec.action.shape[0] * action_dtype.itemsize

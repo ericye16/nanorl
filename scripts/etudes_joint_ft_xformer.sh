@@ -1,7 +1,7 @@
 #!/bin/bash
 
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-    --ft /home/matt/cs224r/nanorl/runs/SAC-PIG-Pretrain-42-1685669585.6487474/checkpoint_28000 \
+    --ft ~/cs224r/nanorl/runs/SAC-XFormer-PIG-Pretrain-42-1685936580.4513552/checkpoint_17000 \
     --pretrain_envs RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0 \
                 RoboPianist-etude-12-FrenchSuiteNo5Sarabande-v0 \
                 RoboPianist-etude-12-PianoSonataD8451StMov-v0 \
@@ -39,7 +39,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --gravity-compensation \
     --reduced-action-space \
     --control-timestep 0.05 \
-    --n-steps-lookahead 10 \
+    --n-steps-lookahead 40 \
     --action-reward-observation \
     --primitive-fingertip-collisions \
     --eval-episodes 1 \
@@ -47,6 +47,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --tqdm-bar \
     --num_workers 1 \
     --update_period 10 \
+    --agent_config.use_transformer \
     --agent_config.num_qs 2 \
     --replay_capacity 1000000 \
     --log_interval 10 \

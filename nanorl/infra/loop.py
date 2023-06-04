@@ -1,4 +1,6 @@
 import time
+import traceback
+from collections import defaultdict
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
 from pathlib import Path
@@ -18,7 +20,6 @@ LoggerFn = Callable[[], Any]
 
 
 def environment_worker(env_fn: EnvFn, pipe: Connection):
-    print("env worker")
     env = env_fn()
     timestep = env.reset()
     pipe.send(timestep)
@@ -45,6 +46,7 @@ def train_loop(
     reset_interval: int,
     tqdm_bar: bool,
     num_workers: int,
+    update_period: int,
 ) -> None:
     env = env_fns[0]()
     agent = agent_fn(env)
@@ -71,16 +73,29 @@ def train_loop(
         if step < warmstart_steps // num_workers:
             actions = [spec.sample_action(random_state=env.random_state) for _ in timesteps]
         else:
-            agent, actions = agent.sample_actions([ts.observation for ts in timesteps])
+            agent, actions = agent.sample_actions(jnp.stack([ts.observation for ts in timesteps], axis=0))
 
-        for action, pipe in zip(actions, pipes):
+        for action, pipe in zip(actions, pipes, strict=True):
             pipe.send(action)
 
-        buff_idx = step % num_workers
-        if step >= warmstart_steps // num_workers and replay_buffers[buff_idx].is_ready():
-            transitions = replay_buffers[buff_idx].sample()
-            agent, metrics = agent.update(transitions)
+        updated = False
+        step_metrics = []
+        if step % update_period == 0 and step >= warmstart_steps // num_workers:
+            for replay_buffer in replay_buffers:
+                if replay_buffer.is_ready():
+                    transitions = replay_buffer.sample()
+                    agent, metrics = agent.update(transitions)
+                    step_metrics.append(metrics)
+                    updated = True
+
+        if updated:
+            metrics = defaultdict(float)
             if step % log_interval == 0:
+                for metric_dict in step_metrics:
+                    metrics.update(metric_dict)
+
+                for k in metrics:
+                    metrics[k] /= num_workers
                 experiment.log(utils.prefix_dict("train", metrics), step=step)
 
             if checkpoint_interval >= 0 and step % checkpoint_interval == 0:
@@ -88,10 +103,10 @@ def train_loop(
                 experiment.save_checkpoint(agent, step=step)
 
             if step % log_interval == 0:
-                experiment.log({"train/fps": int(step / (time.time() - start_time))}, step=step)
+                experiment.log({"train/fps": int(step*num_workers / (time.time() - start_time))}, step=step)
 
-            if resets and step % reset_interval == 0:
-                agent = agent_fn(env)
+        if resets and step % reset_interval == 0:
+            agent = agent_fn(env)
 
         timesteps = [pipe.recv() for pipe in pipes]
         for i in range(len(timesteps)):
@@ -111,6 +126,37 @@ def train_loop(
     utils.atomic_save(experiment.data_dir / "replay_buffer.pkl", replay_buffer.data)
 
 
+def eval(
+    experiment: Experiment,
+    checkpoint: str,
+    agent: agent.Agent,
+    envs: Sequence[dm_env.Environment],
+    num_episodes: int,
+    env_names: Sequence[str],
+):
+    # Restore checkpoint.
+    agent = experiment.restore_checkpoint(agent)
+    i = int(Path(checkpoint).stem.split("_")[-1])
+    print(f"Evaluating checkpoint at iteration {i}")
+
+    # Eval!
+    for env, env_name in zip(envs, env_names):
+        for _ in range(num_episodes):
+            timestep = env.reset()
+            while not timestep.last():
+                action = agent.eval_actions(timestep.observation)[0]
+                timestep = env.step(action)
+
+        # Log statistics.
+        log_dict = utils.prefix_dict(f"eval/{env_name}", env.get_statistics())
+        log_dict.update(utils.prefix_dict(f"eval_music/{env_name}", env.get_musical_metrics()))
+        experiment.log(log_dict, step=i)
+
+        # Maybe log video.
+        # experiment.log_video(env.latest_filename, step=i)
+    return i
+
+
 def eval_loop(
     experiment: Experiment,
     env_fn: Callable[[str], dm_env.Environment],
@@ -119,41 +165,32 @@ def eval_loop(
     max_steps: int,
     env_names: Sequence[str],
 ) -> None:
+    try:
+        envs = [env_fn(env_name) for env_name in env_names]
+        agent = agent_fn(envs[0])
 
-    envs = [env_fn(env_name) for env_name in env_names]
-    agent = agent_fn(envs[0])
+        last_checkpoint = None
+        while True:
+            # Wait for new checkpoint.
+            checkpoint = experiment.latest_checkpoint()
+            if checkpoint == last_checkpoint or checkpoint is None:
+                time.sleep(10.0)
+            else:
+                i = eval(
+                    experiment=experiment,
+                    checkpoint=checkpoint,
+                    agent=agent,
+                    envs=envs,
+                    num_episodes=num_episodes,
+                    env_names=env_names,
+                )
+                print(f"Done evaluating checkpoint {i}")
+                last_checkpoint = checkpoint
 
-    last_checkpoint = None
-    while True:
-        # Wait for new checkpoint.
-        checkpoint = experiment.latest_checkpoint()
-        if checkpoint == last_checkpoint or checkpoint is None:
-            time.sleep(10.0)
-        else:
-            # Restore checkpoint.
-            agent = experiment.restore_checkpoint(agent)
-            i = int(Path(checkpoint).stem.split("_")[-1])
-            print(f"Evaluating checkpoint at iteration {i}")
-
-            # Eval!
-            for env, env_name in zip(envs, env_names):
-                for _ in range(num_episodes):
-                    timestep = env.reset()
-                    while not timestep.last():
-                        timestep = env.step(agent.eval_actions(timestep.observation))
-
-                # Log statistics.
-                log_dict = utils.prefix_dict(f"eval/{env_name}", env.get_statistics())
-                log_dict.update(utils.prefix_dict(f"eval_music/{env_name}", env.get_musical_metrics()))
-                experiment.log(log_dict, step=i)
-
-                # Maybe log video.
-                # experiment.log_video(env.latest_filename, step=i)
-
-            print(f"Done evaluating checkpoint {i}")
-            last_checkpoint = checkpoint
-
-            # Exit if we've evaluated the last checkpoint.
-            if i >= max_steps:
-                print(f"Last checkpoint (iteration {i}) evaluated, exiting")
-                break
+                # Exit if we've evaluated the last checkpoint.
+                if i >= max_steps:
+                    print(f"Last checkpoint (iteration {i}) evaluated, exiting")
+                    break
+    except Exception:
+        traceback.print_exc()
+        raise

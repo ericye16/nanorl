@@ -15,7 +15,7 @@ from robopianist import suite
 from robopianist.wrappers import MidiEvaluationWrapper, PianoSoundVideoWrapper
 
 from nanorl import SAC, SACConfig, replay, specs
-from nanorl.infra import Experiment, eval_loop, seed_rngs, train_loop, wrap_env
+from nanorl.infra import Experiment, eval, eval_loop, seed_rngs, train_loop, wrap_env
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,10 @@ class Args:
     """Path to a checkpoint to initialize the agent from for finetuning."""
     num_workers: int = 1
     """Number of workers to use for parallel environment rollouts."""
+    update_period: int = 1
+    """How many environment steps to perform between gradient updates."""
+    eval_only: bool = False
+    """If true, only evaluate and do not train."""
 
     # Replay buffer configuration.
     replay_capacity: int = 1_000_000
@@ -108,6 +112,7 @@ def agent_fn(env: dm_env.Environment, *, args, training: bool = True) -> SAC:
     agent = SAC.initialize(
         spec=specs.EnvironmentSpec.make(env),
         config=args.agent_config,
+        lookahead=args.n_steps_lookahead,
         seed=args.seed,
         discount=args.discount,
     )
@@ -119,7 +124,8 @@ def agent_fn(env: dm_env.Environment, *, args, training: bool = True) -> SAC:
         elif args.ft is not None:
             agent_copy = SAC.initialize(
                 spec=specs.EnvironmentSpec.make(env),
-                config=args.agent_config,
+                    config=args.agent_config,
+                lookahead=args.n_steps_lookahead,
                 seed=args.seed,
                 discount=args.discount,
             )
@@ -128,7 +134,7 @@ def agent_fn(env: dm_env.Environment, *, args, training: bool = True) -> SAC:
             agent = agent.replace(
                 actor=agent_copy.actor,
                 critic=agent_copy.critic,
-                target_critic=agent.target_critic,
+                target_critic=agent_copy.target_critic,
             )
 
     return agent
@@ -210,6 +216,18 @@ def main(args: Args) -> None:
             sync_tensorboard=True,
         )
 
+    if args.eval_only:
+        eval_envs = [env_fn(env_name) for env_name in args.eval_envs]
+        eval(
+            experiment=experiment,
+            checkpoint=args.ft,
+            agent=agent_fn(eval_envs[0], args=args, training=False),
+            envs=eval_envs,
+            num_episodes=args.eval_episodes,
+            env_names=args.eval_envs,
+        )
+        return
+
     pool = futures.ThreadPoolExecutor(1)
     # Run eval in a background thread. Eval continuously monitor for checkpoints and evaluates them
     pool.submit(
@@ -246,6 +264,7 @@ def main(args: Args) -> None:
         reset_interval=args.reset_interval,
         tqdm_bar=args.tqdm_bar,
         num_workers=args.num_workers,
+        update_period=args.update_period,
     )
 
     # Clean up.
