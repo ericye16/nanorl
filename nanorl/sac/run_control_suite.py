@@ -234,13 +234,12 @@ def main(args: Args) -> None:
         eval_loop,
         experiment=experiment,
         env_fn=lambda env: MidiEvaluationWrapper(
-            env_fn(args=args, environment_name=env),
-            # PianoSoundVideoWrapper(
-            #     env_fn(args=args, record_dir=experiment.data_dir / "videos"),
-            #     record_every=1,
-            #     camera_id="piano/back",
-            #     record_dir=experiment.data_dir / "videos",
-            # )
+            PianoSoundVideoWrapper(
+                env_fn(args=args, record_dir=experiment.data_dir / "videos", environment_name=env),
+                record_every=1,
+                camera_id="piano/back",
+                record_dir=experiment.data_dir / "videos",
+            )
         ),
         agent_fn=partial(agent_fn, args=args, training=False),
         num_episodes=args.eval_episodes,

@@ -91,8 +91,8 @@ def train_loop(
 
         if updated:
             if step % log_interval == 0:
-                for metric_dict, env_name in zip(step_metrics, env_names, strict=True):
-                    experiment.log(utils.prefix_dict(f"train/{env_name}", metric_dict), step=step)
+                for i, metric_dict in enumerate(step_metrics):
+                    experiment.log(utils.prefix_dict(f"train/{env_names[i % len(env_names)]}", metric_dict), step=step)
 
             if checkpoint_interval >= 0 and step % checkpoint_interval == 0:
                 print("Checkpointing!")
@@ -111,7 +111,7 @@ def train_loop(
 
             if timestep.last():
                 stats, timestep = pipes[i].recv()
-                experiment.log(utils.prefix_dict(f"train/{env_names[i]}", stats), step=step)
+                experiment.log(utils.prefix_dict(f"train/{env_names[i % len(env_names)]}", stats), step=step)
                 replay_buffers[i].insert(timestep, None)
                 timesteps[i] = timestep
 
@@ -149,7 +149,7 @@ def eval(
         experiment.log(log_dict, step=i)
 
         # Maybe log video.
-        # experiment.log_video(env.latest_filename, step=i)
+        experiment.log_video(env.latest_filename, step=i)
     return i
 
 
