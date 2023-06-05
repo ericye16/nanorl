@@ -37,10 +37,23 @@ def environment_worker(env_fn: EnvFn, pipe: Connection):
             actual_keys_played = env.task.actual_keys_played
             timestep = env.reset()
             pipe.send((stats, timestep))
-            stuff.append((timestep, None))
-            stuff.append(stats)
-            stuff.append(actual_keys_played)
-            pipe.send(stuff)
+            # stuff.append(stats)
+            # stuff.append(actual_keys_played)
+            # pipe.send(stuff)
+            # fun replay stuff
+            replay_env = env_fn(replay_keys=actual_keys_played)
+            replay_timestep = replay_env.reset()
+            replay_buffer = []
+            # this one doesn't work for some reason
+            replay_buffer.append((replay_timestep, None))
+            # print("at: ", all_timesteps)
+            for replayed_timestep, action in stuff:
+                if action is None:
+                    break
+                # print("action shape 2", action.shape)
+                new_timestep = replay_env.step(action)
+                replay_buffer.append((new_timestep, action))
+            pipe.send(replay_buffer)
             stuff = []
 
 
@@ -112,21 +125,9 @@ def train_loop(
                 experiment.log(utils.prefix_dict("train", stats), step=step)
                 replay_buffers[i].insert(timestep, None)
                 timesteps[i] = timestep
-                # fun replay stuff
-                all_timesteps = pipes[i].recv()
-                actual_keys_played = all_timesteps[-1]
-                all_timesteps = all_timesteps[:-2]
-                replay_env = env_fn(replay_keys=actual_keys_played)
-                replay_timestep = replay_env.reset()
-                # this one doesn't work for some reason
-                replay_buffers[i].insert(replay_timestep, None)
-                # print("at: ", all_timesteps)
-                for replayed_timestep, action in all_timesteps:
-                    if action is None:
-                        break
-                    # print("action shape 2", action.shape)
-                    new_timestep = replay_env.step(action)
-                    replay_buffers[i].insert(new_timestep, action)
+                replay_buffer_list = pipes[i].recv()
+                for (ts, ac) in replay_buffer_list:
+                    replay_buffers[i].insert(ts, ac)
                                 
 
     for proc in procs:

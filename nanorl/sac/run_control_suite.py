@@ -199,8 +199,8 @@ def main(args: Args) -> None:
     pool = futures.ThreadPoolExecutor(1)
 
     # Run training in a background thread.
-    # pool.submit(
-    train_loop(
+    pool.submit(
+        train_loop,
         experiment=experiment,
         env_fn=partial(env_fn, args=args),
         agent_fn=partial(agent_fn, args=args),
