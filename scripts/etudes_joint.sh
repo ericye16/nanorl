@@ -1,8 +1,7 @@
 #!/bin/bash
-    # --ft ~/cs224r/nanorl/runs/SAC-XFormer-PIG-Pretrain-42-1685936580.4513552/checkpoint_17000 \
+    # --ft /home/matt/cs224r/nanorl/runs/SAC-PIG-Pretrain-42-1685669585.6487474/checkpoint_28000 \
 
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-    --init_from_checkpoint ~/cs224r/nanorl/runs/SAC-Finetune-All-Etudes-42-1685985453.193706/checkpoint_60000 \
     --pretrain_envs RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0 \
                 RoboPianist-etude-12-FrenchSuiteNo5Sarabande-v0 \
                 RoboPianist-etude-12-PianoSonataD8451StMov-v0 \
@@ -28,10 +27,10 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
                 RoboPianist-etude-12-PianoSonataNo21StMov-v0 \
                 RoboPianist-etude-12-PianoSonataK279InCMajor1StMov-v0 \
     --root-dir ~/cs224r/nanorl/runs/ \
-    --name "XFormer-Finetune-All-Etudes" \
+    --name "All-Etudes" \
     --warmstart-steps 0 \
     --checkpoint_interval 10000 \
-    --max-steps 100000 \
+    --max-steps 1000000 \
     --discount 0.99 \
     --agent-config.critic-dropout-rate 0.01 \
     --agent-config.critic-layer-norm \
@@ -40,7 +39,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --gravity-compensation \
     --reduced-action-space \
     --control-timestep 0.05 \
-    --n-steps-lookahead 40 \
+    --n-steps-lookahead 10 \
     --action-reward-observation \
     --primitive-fingertip-collisions \
     --eval-episodes 1 \
@@ -48,7 +47,6 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --tqdm-bar \
     --num_workers 1 \
     --update_period 10 \
-    --agent_config.use_transformer \
     --agent_config.num_qs 2 \
     --replay_capacity 1000000 \
     --log_interval 10 \

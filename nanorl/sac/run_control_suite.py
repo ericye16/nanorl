@@ -250,10 +250,8 @@ def main(args: Args) -> None:
 
     train_loop(
         experiment=experiment,
-        env_fns=[
-            partial(env_fn, args=args, environment_name=env)
-            for env in args.pretrain_envs
-        ],
+        env_names=args.pretrain_envs,
+        env_fn=partial(env_fn, args=args),
         agent_fn=partial(agent_fn, args=args),
         replay_fn=partial(replay_fn, args=args),
         max_steps=args.max_steps,

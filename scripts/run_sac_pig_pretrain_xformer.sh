@@ -151,7 +151,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
                 RoboPianist-etude-12-GolliwoggsCakewalk-v0 \
                 RoboPianist-etude-12-PianoSonataNo21StMov-v0 \
                 RoboPianist-etude-12-PianoSonataK279InCMajor1StMov-v0 \
-    --name "MLP-PIG-Pretrain" \
+    --name "XFormer-PIG-Pretrain" \
     --root-dir ~/cs224r/nanorl/runs/ \
     --warmstart-steps 0 \
     --checkpoint_interval 1000 \
@@ -172,6 +172,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --tqdm-bar \
     --num_workers 1 \
     --update_period 10 \
+    --agent_config.use_transformer \
     --agent_config.num_qs 2 \
     --replay_capacity 1000000 \
     --checkpoint_interval 1000 \

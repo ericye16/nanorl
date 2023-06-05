@@ -19,8 +19,8 @@ ReplayFn = Callable[[dm_env.Environment], replay.ReplayBuffer]
 LoggerFn = Callable[[], Any]
 
 
-def environment_worker(env_fn: EnvFn, pipe: Connection):
-    env = env_fn()
+def environment_worker(env_fn: EnvFn, env_name: str, pipe: Connection):
+    env = env_fn(environment_name=env_name)
     timestep = env.reset()
     pipe.send(timestep)
     while True:
@@ -35,7 +35,8 @@ def environment_worker(env_fn: EnvFn, pipe: Connection):
 
 def train_loop(
     experiment: Experiment,
-    env_fns: Sequence[EnvFn],
+    env_names: Sequence[str],
+    env_fn: EnvFn,
     agent_fn: AgentFn,
     replay_fn: ReplayFn,
     max_steps: int,
@@ -48,17 +49,17 @@ def train_loop(
     num_workers: int,
     update_period: int,
 ) -> None:
-    env = env_fns[0]()
+    env = env_fn(environment_name=env_names[0])
     agent = agent_fn(env)
     spec = specs.EnvironmentSpec.make(env)
 
-    num_workers = num_workers * len(env_fns)
+    num_workers = num_workers * len(env_names)
     replay_buffers = [replay_fn(env) for _ in range(num_workers)]
     pipes, child_pipes = zip(*[Pipe() for _ in range(num_workers)])
     procs = [
         Process(
             target=environment_worker,
-            args=(env_fns[i % len(env_fns)], pipe)
+            args=(env_fn, env_names[i % len(env_names)], pipe)
         ) for i, pipe in enumerate(child_pipes)
     ]
     for p in procs:
@@ -89,14 +90,9 @@ def train_loop(
                     updated = True
 
         if updated:
-            metrics = defaultdict(float)
             if step % log_interval == 0:
-                for metric_dict in step_metrics:
-                    metrics.update(metric_dict)
-
-                for k in metrics:
-                    metrics[k] /= num_workers
-                experiment.log(utils.prefix_dict("train", metrics), step=step)
+                for metric_dict, env_name in zip(step_metrics, env_names, strict=True):
+                    experiment.log(utils.prefix_dict(f"train/{env_name}", metric_dict), step=step)
 
             if checkpoint_interval >= 0 and step % checkpoint_interval == 0:
                 print("Checkpointing!")
@@ -115,7 +111,7 @@ def train_loop(
 
             if timestep.last():
                 stats, timestep = pipes[i].recv()
-                experiment.log(utils.prefix_dict("train", stats), step=step)
+                experiment.log(utils.prefix_dict(f"train/{env_names[i]}", stats), step=step)
                 replay_buffers[i].insert(timestep, None)
                 timesteps[i] = timestep
 

@@ -310,6 +310,11 @@ class SAC(agent.Agent):
     def update(self, transitions: Transition) -> tuple["SAC", LogDict]:
         new_agent = self
 
+        normalized_reward = transitions.reward
+        normalized_reward -= jnp.mean(transitions.reward, axis=0)
+        normalized_reward /= jnp.std(transitions.reward, axis=0)
+        transitions = transitions._replace(reward=normalized_reward)
+
         # Update critic.
         for i in range(self.critic_utd_ratio):
 
