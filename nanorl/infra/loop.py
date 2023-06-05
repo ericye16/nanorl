@@ -35,13 +35,14 @@ def environment_worker(env_fn: EnvFn, pipe: Connection):
         if timestep.last():
             stats = env.get_statistics()
             actual_keys_played = env.task.actual_keys_played
+            actual_fingers = env.task.actual_fingers_used
             timestep = env.reset()
             pipe.send((stats, timestep))
             # stuff.append(stats)
             # stuff.append(actual_keys_played)
             # pipe.send(stuff)
             # fun replay stuff
-            replay_env = env_fn(replay_keys=actual_keys_played)
+            replay_env = env_fn(replay_keys=(actual_keys_played, actual_fingers))
             replay_timestep = replay_env.reset()
             replay_buffer = []
             # this one doesn't work for some reason
