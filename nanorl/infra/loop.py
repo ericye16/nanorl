@@ -161,7 +161,7 @@ def eval(
         experiment.log(log_dict, step=i)
 
         # Maybe log video.
-        # experiment.log_video(env.latest_filename, step=i)
+        experiment.log_video(env.latest_filename, step=i)
     return i
 
 
