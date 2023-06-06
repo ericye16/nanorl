@@ -1,13 +1,12 @@
 #!/bin/bash
 
 train () {
-    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-        --ft ~/cs224r/nanorl/runs/SAC-PIG-Pretrain-42-1685669585.6487474/checkpoint_28000 \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
         --pretrain_envs "$1" \
         --eval_envs "$1" \
         --root-dir ~/cs224r/nanorl/runs/ \
-        --name "Finetune-$1" \
-        --warmstart-steps 0 \
+        --name "$1" \
+        --warmstart-steps 5000 \
         --checkpoint_interval 10000 \
         --max-steps 1000000 \
         --discount 0.99 \
@@ -24,8 +23,9 @@ train () {
         --eval-episodes 1 \
         --camera-id "piano/back" \
         --tqdm-bar \
+        --num_workers 1 \
         --update_period 10 \
-        --num_workers 10
+        --agent_config.use_transformer
 }
 
 train "RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0"

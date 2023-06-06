@@ -98,7 +98,7 @@ def wrap_env(
             width=record_resolution[1],
         )
         env = CustomEpisodeStatisticsWrapper(
-            environment=env, deque_size=record_every
+            environment=env, deque_size=deque_size,
         )
     else:
         env = CustomEpisodeStatisticsWrapper(environment=env, deque_size=deque_size)
