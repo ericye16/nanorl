@@ -1,7 +1,9 @@
 """Train a SAC agent on dm_control suite tasks."""
 
+import copy
 from functools import partial
 import time
+import dataclasses
 from dataclasses import asdict, dataclass
 from concurrent import futures
 from pathlib import Path
@@ -82,6 +84,7 @@ class Args:
     disable_colorization: bool = False
     disable_hand_collisions: bool = False
     primitive_fingertip_collisions: bool = False
+    print_fingers_used: bool = False
 
     # Environment wrapper configuration.
     frame_stack: int = 1
@@ -156,6 +159,7 @@ def env_fn(*, args, record_dir: Optional[Path] = None, replay_keys = None) -> dm
             disable_colorization=args.disable_colorization,
             disable_hand_collisions=args.disable_hand_collisions,
             primitive_fingertip_collisions=args.primitive_fingertip_collisions,
+            print_fingers_used=args.print_fingers_used,
             change_color_on_activation=True,
         ),
     )
@@ -216,17 +220,19 @@ def main(args: Args) -> None:
     )
 
     # Continuously monitor for checkpoints and evaluate.
+    # args.print_fingers_used = True
+    new_args = dataclasses.replace(args, print_fingers_used=True)
     eval_loop(
         experiment=experiment,
         env_fn=lambda: MidiEvaluationWrapper(
             PianoSoundVideoWrapper(
-                env_fn(args=args, record_dir=experiment.data_dir / "videos"),
+                env_fn(args=new_args, record_dir=experiment.data_dir / "videos"),
                 record_every=1,
                 camera_id="piano/back",
                 record_dir=experiment.data_dir / "videos",
             )
         ),
-        agent_fn=partial(agent_fn, args=args),
+        agent_fn=partial(agent_fn, args=new_args),
         num_episodes=args.eval_episodes,
         max_steps=args.max_steps,
     )
