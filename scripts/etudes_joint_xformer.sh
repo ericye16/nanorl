@@ -1,7 +1,7 @@
 #!/bin/bash
+    # --ft /home/matt/cs224r/nanorl/runs/SAC-PIG-Pretrain-42-1685669585.6487474/checkpoint_28000 \
 
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-    --ft /home/matt/cs224r/nanorl/runs/SAC-PIG-Pretrain-42-1685669585.6487474/checkpoint_28000 \
     --pretrain_envs RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0 \
                 RoboPianist-etude-12-FrenchSuiteNo5Sarabande-v0 \
                 RoboPianist-etude-12-PianoSonataD8451StMov-v0 \
@@ -27,7 +27,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
                 RoboPianist-etude-12-PianoSonataNo21StMov-v0 \
                 RoboPianist-etude-12-PianoSonataK279InCMajor1StMov-v0 \
     --root-dir ~/cs224r/nanorl/runs/ \
-    --name "Finetune-All-Etudes" \
+    --name "All-Etudes" \
     --warmstart-steps 0 \
     --checkpoint_interval 10000 \
     --max-steps 1000000 \
@@ -54,5 +54,5 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --agent_config.actor_lr 3e-4 \
     --agent_config.critic_lr 3e-4 \
     --agent_config.temp_lr 3e-4 \
-    --eval_episodes 10 \
-    "$@"
+    --agent_config.use_transformer \
+    --eval_episodes 10

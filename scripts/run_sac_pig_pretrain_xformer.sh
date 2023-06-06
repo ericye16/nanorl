@@ -154,8 +154,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --name "XFormer-PIG-Pretrain" \
     --root-dir ~/cs224r/nanorl/runs/ \
     --warmstart-steps 0 \
-    --checkpoint_interval 1000 \
-    --max-steps 100000 \
+    --max-steps 70000 \
     --discount 0.99 \
     --agent-config.critic-dropout-rate 0.01 \
     --agent-config.critic-layer-norm \
@@ -174,8 +173,8 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --update_period 10 \
     --agent_config.use_transformer \
     --agent_config.num_qs 2 \
-    --replay_capacity 1000000 \
-    --checkpoint_interval 1000 \
+    --replay_capacity 100000 \
+    --checkpoint_interval 5000 \
     --log_interval 100 \
     --batch_size 256 \
     --agent_config.actor_lr 3e-4 \

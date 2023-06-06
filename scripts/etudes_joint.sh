@@ -2,6 +2,7 @@
     # --ft /home/matt/cs224r/nanorl/runs/SAC-PIG-Pretrain-42-1685669585.6487474/checkpoint_28000 \
 
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
+    --init_from_checkpoint ~/cs224r/nanorl/runs/SAC-All-Etudes-42-1685995636.9202507/checkpoint_70000 \
     --pretrain_envs RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0 \
                 RoboPianist-etude-12-FrenchSuiteNo5Sarabande-v0 \
                 RoboPianist-etude-12-PianoSonataD8451StMov-v0 \
@@ -54,4 +55,5 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --agent_config.actor_lr 3e-4 \
     --agent_config.critic_lr 3e-4 \
     --agent_config.temp_lr 3e-4 \
-    --eval_episodes 10
+    --eval_episodes 10 \
+    "$@"

@@ -161,7 +161,7 @@ def replay_fn(env: dm_env.Environment, *, args) -> replay.ReplayBuffer:
     )
 
 
-def env_fn(*, args, environment_name: str = None, record_dir: Optional[Path] = None) -> dm_env.Environment:
+def env_fn(*, args, environment_name: str = None, record_dir: Optional[Path] = None, is_eval: bool = False) -> dm_env.Environment:
     env = suite.load(
         environment_name=environment_name,
         seed=args.seed,
@@ -191,6 +191,7 @@ def env_fn(*, args, environment_name: str = None, record_dir: Optional[Path] = N
         clip=args.clip,
         camera_id=args.camera_id,
         action_reward_observation=args.action_reward_observation,
+        deque_size=args.eval_episodes if is_eval else 1,
     )
 
 
@@ -217,10 +218,17 @@ def main(args: Args) -> None:
         )
 
     if args.eval_only:
-        eval_envs = [env_fn(env_name) for env_name in args.eval_envs]
+        eval_envs = [
+            MidiEvaluationWrapper(
+                env_fn(args=args, environment_name=env_name, is_eval=True),
+                deque_size=args.eval_episodes,
+            ) for env_name in args.eval_envs
+        ]
+        ckpt_exp = Experiment(Path(args.init_from_checkpoint)).assert_exists()
         eval(
             experiment=experiment,
-            checkpoint=args.ft,
+            ckpt_exp=ckpt_exp,
+            checkpoint=args.init_from_checkpoint,
             agent=agent_fn(eval_envs[0], args=args, training=False),
             envs=eval_envs,
             num_episodes=args.eval_episodes,
@@ -234,13 +242,14 @@ def main(args: Args) -> None:
         eval_loop,
         experiment=experiment,
         env_fn=lambda env: MidiEvaluationWrapper(
-            env_fn(args=args, environment_name=env),
+            env_fn(args=args, environment_name=env, is_eval=True),
             # PianoSoundVideoWrapper(
             #     env_fn(args=args, record_dir=experiment.data_dir / "videos"),
             #     record_every=1,
             #     camera_id="piano/back",
             #     record_dir=experiment.data_dir / "videos",
             # )
+            deque_size=args.eval_episodes,
         ),
         agent_fn=partial(agent_fn, args=args, training=False),
         num_episodes=args.eval_episodes,

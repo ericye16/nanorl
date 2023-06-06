@@ -1,8 +1,7 @@
 #!/bin/bash
-    # --ft ~/cs224r/nanorl/runs/SAC-XFormer-PIG-Pretrain-42-1685936580.4513552/checkpoint_17000 \
+    --ft ~/cs224r/nanorl/runs/SAC-XFormer-PIG-Pretrain-42-1685936580.4513552/checkpoint_17000 \
 
 PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-    --init_from_checkpoint ~/cs224r/nanorl/runs/SAC-Finetune-All-Etudes-42-1685985453.193706/checkpoint_60000 \
     --pretrain_envs RoboPianist-etude-12-FrenchSuiteNo1Allemande-v0 \
                 RoboPianist-etude-12-FrenchSuiteNo5Sarabande-v0 \
                 RoboPianist-etude-12-PianoSonataD8451StMov-v0 \

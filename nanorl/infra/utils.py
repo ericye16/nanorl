@@ -86,6 +86,7 @@ def wrap_env(
     frame_stack: int = 1,
     clip: bool = True,
     action_reward_observation: bool = False,
+    deque_size: int = 1,
 ) -> dm_env.Environment:
     if record_dir is not None:
         env = wrappers.DmControlVideoWrapper(
@@ -96,11 +97,11 @@ def wrap_env(
             height=record_resolution[0],
             width=record_resolution[1],
         )
-        env = wrappers.EpisodeStatisticsWrapper(
+        env = CustomEpisodeStatisticsWrapper(
             environment=env, deque_size=record_every
         )
     else:
-        env = wrappers.EpisodeStatisticsWrapper(environment=env, deque_size=1)
+        env = CustomEpisodeStatisticsWrapper(environment=env, deque_size=deque_size)
 
     if action_reward_observation:
         env = wrappers.ObservationActionRewardWrapper(env)
@@ -115,3 +116,16 @@ def wrap_env(
     env = wrappers.DmControlWrapper(env)
 
     return env
+
+
+class CustomEpisodeStatisticsWrapper(wrappers.EpisodeStatisticsWrapper):
+    def step(self, action) -> dm_env.TimeStep:
+        timestep = self._environment.step(action)
+        self._episode_return += timestep.reward if timestep.reward is not None else 0.0
+        self._episode_length += 1
+        if timestep.last():
+            self._return_queue.append(self._episode_return)
+            self._length_queue.append(self._episode_length)
+            self._episode_return = 0.0
+            self._episode_length = 0
+        return timestep

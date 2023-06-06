@@ -1,10 +1,10 @@
 import time
 import traceback
-from collections import defaultdict
+from copy import copy
 from multiprocessing import Pipe, Process
 from multiprocessing.connection import Connection
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import dm_env
 import tqdm
@@ -91,8 +91,8 @@ def train_loop(
 
         if updated:
             if step % log_interval == 0:
-                for metric_dict, env_name in zip(step_metrics, env_names, strict=True):
-                    experiment.log(utils.prefix_dict(f"train/{env_name}", metric_dict), step=step)
+                for i, metric_dict in enumerate(step_metrics):
+                    experiment.log(utils.prefix_dict(f"train/{env_names[i % len(env_names)]}", metric_dict), step=step)
 
             if checkpoint_interval >= 0 and step % checkpoint_interval == 0:
                 print("Checkpointing!")
@@ -111,7 +111,7 @@ def train_loop(
 
             if timestep.last():
                 stats, timestep = pipes[i].recv()
-                experiment.log(utils.prefix_dict(f"train/{env_names[i]}", stats), step=step)
+                experiment.log(utils.prefix_dict(f"train/{env_names[i % len(env_names)]}", stats), step=step)
                 replay_buffers[i].insert(timestep, None)
                 timesteps[i] = timestep
 
@@ -129,20 +129,32 @@ def eval(
     envs: Sequence[dm_env.Environment],
     num_episodes: int,
     env_names: Sequence[str],
+    ckpt_exp: Optional[Experiment] = None,
 ):
     # Restore checkpoint.
-    agent = experiment.restore_checkpoint(agent)
+    if ckpt_exp is None:
+        ckpt_exp = experiment
+    agent = ckpt_exp.restore_checkpoint(agent)
     i = int(Path(checkpoint).stem.split("_")[-1])
     print(f"Evaluating checkpoint at iteration {i}")
 
     # Eval!
-    for env, env_name in zip(envs, env_names):
-        for _ in range(num_episodes):
-            timestep = env.reset()
-            while not timestep.last():
-                action = agent.eval_actions(timestep.observation)[0]
+    for _ in range(num_episodes):
+        envs_copy = copy(envs)
+        timesteps = [env.reset() for env in envs_copy]
+        while envs_copy:
+            actions = agent.eval_actions(jnp.stack([ts.observation for ts in timesteps], axis=0))
+            new_timesteps = []
+            new_envs = []
+            for env, timestep, action in zip(envs_copy, timesteps, actions, strict=True):
                 timestep = env.step(action)
+                if not timestep.last():
+                    new_timesteps.append(timestep)
+                    new_envs.append(env)
+            timesteps = new_timesteps
+            envs_copy = new_envs
 
+    for env, env_name in zip(envs, env_names, strict=True):
         # Log statistics.
         log_dict = utils.prefix_dict(f"eval/{env_name}", env.get_statistics())
         log_dict.update(utils.prefix_dict(f"eval_music/{env_name}", env.get_musical_metrics()))
