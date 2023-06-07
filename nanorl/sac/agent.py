@@ -14,7 +14,7 @@ from flax.training.train_state import TrainState
 from transformers import BertConfig
 
 from nanorl import agent
-from nanorl.distributions import TanhNormal
+from nanorl.distributions import Normal, TanhNormal
 from nanorl.networks import (
     MLP,
     Ensemble,
@@ -73,6 +73,7 @@ class SACConfig:
     critic_utd_ratio: int = 1
     actor_utd_ratio: int = 1
     use_transformer: bool = False
+    num_heads: int = 4
 
 
 class SAC(agent.Agent):
@@ -119,7 +120,7 @@ class SAC(agent.Agent):
                     vocab_size=89,
                     hidden_size=config.hidden_dims[0],
                     num_hidden_layers=len(config.hidden_dims),
-                    num_attention_heads=1,
+                    num_attention_heads=config.num_heads,
                     intermediate_size=config.hidden_dims[0]*4,
                     hidden_dropout_prob=0.0,
                 ),
@@ -164,6 +165,7 @@ class SAC(agent.Agent):
                 use_layer_norm=config.critic_layer_norm,
             )
         critic_cls = partial(StateActionValue, base_cls=critic_base_cls)
+        # critic_cls = partial(Normal, base_cls=critic_cls, action_dim=1)
         critic_def = Ensemble(critic_cls, num=config.num_qs)
         critic_params = critic_def.init(critic_key, observations, actions)["params"]
         critic = TrainState.create(
@@ -310,12 +312,16 @@ class SAC(agent.Agent):
     def update(self, transitions: Transition) -> tuple["SAC", LogDict]:
         new_agent = self
 
-        normalized_reward = transitions.reward
-        normalized_reward -= jnp.mean(transitions.reward, axis=0)
-        normalized_reward /= jnp.std(transitions.reward, axis=0)
-        transitions = transitions._replace(reward=normalized_reward)
+        # normalized_reward = transitions.reward
+        # normalized_reward -= jnp.mean(transitions.reward, axis=0)
+        # normalized_reward /= jnp.std(transitions.reward, axis=0)
+        # transitions = transitions._replace(reward=normalized_reward)
 
         # Update critic.
+        # for i, x in enumerate(transitions.observation[0]):
+        #     print(i, x)
+
+        # print("====")
         for i in range(self.critic_utd_ratio):
 
             def slice(x):

@@ -10,7 +10,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --discount 0.99 \
     --agent-config.critic-dropout-rate 0.01 \
     --agent-config.critic-layer-norm \
-    --agent-config.hidden-dims 64 64 64 \
+    --agent-config.hidden-dims 128 128 \
     --trim-silence \
     --gravity-compensation \
     --reduced-action-space \
@@ -21,8 +21,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --eval-episodes 1 \
     --camera-id "piano/back" \
     --tqdm-bar \
-    --num_workers 10 \
-    --update_period 1 \
+    --num_workers 1 \
     --agent_config.num_qs 2 \
     --replay_capacity 1000000 \
     --checkpoint_interval 10000 \

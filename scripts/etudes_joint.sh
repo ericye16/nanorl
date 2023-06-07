@@ -47,7 +47,6 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --camera-id "piano/back" \
     --tqdm-bar \
     --num_workers 1 \
-    --update_period 10 \
     --agent_config.num_qs 2 \
     --replay_capacity 1000000 \
     --log_interval 10 \

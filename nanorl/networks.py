@@ -6,10 +6,7 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 from transformers import BertConfig
-from transformers.models.bert.modeling_flax_bert import (
-    FlaxBertEmbeddings,
-    FlaxBertEncoder,
-)
+from transformers.models.bert.modeling_flax_bert import FlaxBertEncoder
 
 from nanorl import types
 
@@ -36,21 +33,27 @@ class TransformerAnd(nn.Module):
         )
         self.LayerNorm = nn.LayerNorm(epsilon=self.config.layer_norm_eps, dtype=self.dtype)
         self.dropout = nn.Dropout(rate=self.config.hidden_dropout_prob)
+        self.conv = nn.Conv(features=self.config.hidden_size, kernel_size=(10,), strides=10)
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
         if len(x.shape) == 1:
             x = jnp.expand_dims(x, 0)
-        goal_states_idx = self.obs_ts_dim * self.sequence_len
-        goal_states, fixed_state = x[:, :goal_states_idx], x[:, goal_states_idx:]
+        offset = 49
+        goal_states_len = self.obs_ts_dim * self.sequence_len
+        goal_states, fixed_state = x[:, offset:goal_states_len+offset], jnp.concatenate([
+            x[:, :offset],
+            x[:, goal_states_len+offset:],
+        ], axis=-1)
 
-        reshaper = lambda x: jnp.reshape(x, (self.obs_ts_dim, self.sequence_len)).T
+        reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.obs_ts_dim))
         goal_states = jax.vmap(reshaper)(goal_states)
         fixed_state = jnp.expand_dims(fixed_state, 1)
         hidden_dim = self.config.hidden_size
-        note_embeddings = nn.Dense(features=hidden_dim, name="emb_goal")(goal_states)
-        fixed_state_embeddings = nn.Dense(features=hidden_dim, name="emb_fixed")(fixed_state).repeat(self.sequence_len, axis=1)
-        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(goal_states).shape[-2]), goal_states.shape[:-1])
+        note_embeddings = jax.vmap(self.conv)(goal_states)
+        # note_embeddings = nn.Dense(features=hidden_dim, name="emb_goal")(note_embeddings)
+        fixed_state_embeddings = nn.Dense(features=hidden_dim, name="emb_fixed")(fixed_state).repeat(note_embeddings.shape[-2], axis=1)
+        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(note_embeddings).shape[-2]), note_embeddings.shape[:-1])
         positional_embeddings = self.position_embeddings(position_ids.astype("i4"))
 
         hidden_states = note_embeddings + fixed_state_embeddings + positional_embeddings

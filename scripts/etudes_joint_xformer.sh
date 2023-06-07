@@ -39,14 +39,13 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --gravity-compensation \
     --reduced-action-space \
     --control-timestep 0.05 \
-    --n-steps-lookahead 10 \
+    --n-steps-lookahead 100 \
     --action-reward-observation \
     --primitive-fingertip-collisions \
     --eval-episodes 1 \
     --camera-id "piano/back" \
     --tqdm-bar \
     --num_workers 1 \
-    --update_period 10 \
     --agent_config.num_qs 2 \
     --replay_capacity 1000000 \
     --log_interval 10 \

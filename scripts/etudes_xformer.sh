@@ -12,19 +12,19 @@ train () {
         --discount 0.99 \
         --agent-config.critic-dropout-rate 0.01 \
         --agent-config.critic-layer-norm \
-        --agent-config.hidden-dims 256 256 256 \
+        --agent-config.hidden-dims 128 128 \
+        --agent-config.num_heads 2 \
         --trim-silence \
         --gravity-compensation \
         --reduced-action-space \
         --control-timestep 0.05 \
-        --n-steps-lookahead 10 \
+        --n-steps-lookahead 100 \
         --action-reward-observation \
         --primitive-fingertip-collisions \
         --eval-episodes 1 \
         --camera-id "piano/back" \
         --tqdm-bar \
         --num_workers 1 \
-        --update_period 10 \
         --agent_config.use_transformer
 }
 

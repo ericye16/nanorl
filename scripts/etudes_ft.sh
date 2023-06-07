@@ -24,7 +24,6 @@ train () {
         --eval-episodes 1 \
         --camera-id "piano/back" \
         --tqdm-bar \
-        --update_period 10 \
         --num_workers 10
 }
 

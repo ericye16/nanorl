@@ -47,9 +47,8 @@ def train_loop(
     reset_interval: int,
     tqdm_bar: bool,
     num_workers: int,
-    update_period: int,
 ) -> None:
-    env = env_fn(environment_name=env_names[0])
+    env: dm_env.Environment = env_fn(environment_name=env_names[0])
     agent = agent_fn(env)
     spec = specs.EnvironmentSpec.make(env)
 
@@ -70,29 +69,22 @@ def train_loop(
         replay_buffer.insert(ts, None)
 
     start_time = time.time()
-    for step in tqdm.tqdm(range(1, max_steps + 1), disable=not tqdm_bar):
-        if step < warmstart_steps // num_workers:
-            actions = [spec.sample_action(random_state=env.random_state) for _ in timesteps]
-        else:
-            agent, actions = agent.sample_actions(jnp.stack([ts.observation for ts in timesteps], axis=0))
+    for step in tqdm.tqdm(range(0, max_steps), disable=not tqdm_bar):
+        if step % len(timesteps) == 0 or step < warmstart_steps:
+            if step < warmstart_steps:
+                actions = [spec.sample_action(random_state=env.random_state) for _ in timesteps]
+            else:
+                agent, actions = agent.sample_actions(jnp.stack([ts.observation for ts in timesteps], axis=0))
 
-        for action, pipe in zip(actions, pipes, strict=True):
-            pipe.send(action)
+            for action, pipe in zip(actions, pipes, strict=True):
+                pipe.send(action)
 
-        updated = False
-        step_metrics = []
-        if step % update_period == 0 and step >= warmstart_steps // num_workers:
-            for replay_buffer in replay_buffers:
-                if replay_buffer.is_ready():
-                    transitions = replay_buffer.sample()
-                    agent, metrics = agent.update(transitions)
-                    step_metrics.append(metrics)
-                    updated = True
+        if step >= warmstart_steps and (replay_buffer := replay_buffers[step % len(replay_buffers)]).is_ready():
+            transitions = replay_buffer.sample()
+            agent, metrics = agent.update(transitions)
 
-        if updated:
             if step % log_interval == 0:
-                for i, metric_dict in enumerate(step_metrics):
-                    experiment.log(utils.prefix_dict(f"train/{env_names[i % len(env_names)]}", metric_dict), step=step)
+                experiment.log(utils.prefix_dict(f"train/{env_names[step % len(env_names)]}", metrics), step=step)
 
             if checkpoint_interval >= 0 and step % checkpoint_interval == 0:
                 print("Checkpointing!")
@@ -104,16 +96,17 @@ def train_loop(
         if resets and step % reset_interval == 0:
             agent = agent_fn(env)
 
-        timesteps = [pipe.recv() for pipe in pipes]
-        for i in range(len(timesteps)):
-            timestep, action = timesteps[i], actions[i]
-            replay_buffers[i].insert(timestep, action)
+        if (step + 1) % len(timesteps) == 0 or step + 1 < warmstart_steps:
+            timesteps = [pipe.recv() for pipe in pipes]
+            for i in range(len(timesteps)):
+                timestep, action = timesteps[i], actions[i]
+                replay_buffers[i].insert(timestep, action)
 
-            if timestep.last():
-                stats, timestep = pipes[i].recv()
-                experiment.log(utils.prefix_dict(f"train/{env_names[i % len(env_names)]}", stats), step=step)
-                replay_buffers[i].insert(timestep, None)
-                timesteps[i] = timestep
+                if timestep.last():
+                    stats, timestep = pipes[i].recv()
+                    experiment.log(utils.prefix_dict(f"train/{env_names[i % len(env_names)]}", stats), step=step)
+                    replay_buffers[i].insert(timestep, None)
+                    timesteps[i] = timestep
 
     for proc in procs:
         proc.terminate()
@@ -161,7 +154,8 @@ def eval(
         experiment.log(log_dict, step=i)
 
         # Maybe log video.
-        experiment.log_video(env.latest_filename, step=i)
+        if hasattr(env, 'latest_filename'):
+            experiment.log_video(env.latest_filename, step=i)
     return i
 
 
