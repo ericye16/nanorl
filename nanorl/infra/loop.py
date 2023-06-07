@@ -20,20 +20,24 @@ ReplayFn = Callable[[dm_env.Environment], replay.ReplayBuffer]
 LoggerFn = Callable[[], Any]
 
 
-def environment_worker(env_fn: EnvFn, pipe: Connection):
+def environment_worker(env_fn: EnvFn, pipe: Connection, relabel: bool = False):
     env = env_fn()
     stuff = []
     timestep = env.reset()
     stuff.append((timestep, None))
     pipe.send(timestep)
+    orig_rewards = 0
     while True:
         action = pipe.recv()
         # print("action shape 0", action.shape)
         timestep = env.step(action)
+        orig_rewards += timestep.reward
         pipe.send(timestep)
         stuff.append((timestep, action))
         if timestep.last():
             stats = env.get_statistics()
+            stats["total_reward"] = orig_rewards
+            orig_rewards = 0
             actual_keys_played = env.task.actual_keys_played
             actual_fingers = env.task.actual_fingers_used
             timestep = env.reset()
@@ -42,19 +46,24 @@ def environment_worker(env_fn: EnvFn, pipe: Connection):
             # stuff.append(actual_keys_played)
             # pipe.send(stuff)
             # fun replay stuff
-            replay_env = env_fn(replay_keys=(actual_keys_played, actual_fingers))
-            replay_timestep = replay_env.reset()
-            replay_buffer = []
-            # this one doesn't work for some reason
-            replay_buffer.append((replay_timestep, None))
-            # print("at: ", all_timesteps)
-            for replayed_timestep, action in stuff:
-                if action is None:
-                    break
-                # print("action shape 2", action.shape)
-                new_timestep = replay_env.step(action)
-                replay_buffer.append((new_timestep, action))
-            pipe.send(replay_buffer)
+            if relabel:
+                replay_env = env_fn(replay_keys=(actual_keys_played, actual_fingers))
+                replay_timestep = replay_env.reset()
+                replay_buffer = []
+                relabel_rewards = 0
+                # this one doesn't work for some reason
+                replay_buffer.append((replay_timestep, None))
+                # print("at: ", all_timesteps)
+                for replayed_timestep, action in stuff:
+                    if action is None:
+                        break
+                    # print("action shape 2", action.shape)
+                    new_timestep = replay_env.step(action)
+                    relabel_rewards += new_timestep.reward
+                    replay_buffer.append((new_timestep, action))
+                # relabel_stats = replay_env.get_statistics()
+                relabel_stats = {"total_rewards": relabel_rewards}
+                pipe.send((replay_buffer, relabel_stats))
             stuff = []
 
 
@@ -71,6 +80,7 @@ def train_loop(
     reset_interval: int,
     tqdm_bar: bool,
     num_workers: int,
+    relabel: bool
 ) -> None:
     env = env_fn()
     agent = agent_fn(env)
@@ -79,7 +89,7 @@ def train_loop(
     spec = specs.EnvironmentSpec.make(env)
 
     pipes, child_pipes = zip(*[Pipe() for _ in range(num_workers)])
-    procs = [Process(target=environment_worker, args=(env_fn, pipe)) for pipe in child_pipes]
+    procs = [Process(target=environment_worker, args=(env_fn, pipe, relabel)) for pipe in child_pipes]
     for p in procs:
         p.start()
 
@@ -126,9 +136,11 @@ def train_loop(
                 experiment.log(utils.prefix_dict("train", stats), step=step)
                 replay_buffers[i].insert(timestep, None)
                 timesteps[i] = timestep
-                replay_buffer_list = pipes[i].recv()
-                for (ts, ac) in replay_buffer_list:
-                    replay_buffers[i].insert(ts, ac)
+                if relabel:
+                    replay_buffer_list, relabel_stats = pipes[i].recv()
+                    for (ts, ac) in replay_buffer_list:
+                        replay_buffers[i].insert(ts, ac)
+                    experiment.log(utils.prefix_dict("train_relabel", relabel_stats), step=step)
                                 
 
     for proc in procs:

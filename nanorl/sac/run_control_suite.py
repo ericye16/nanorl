@@ -85,6 +85,7 @@ class Args:
     disable_hand_collisions: bool = False
     primitive_fingertip_collisions: bool = False
     print_fingers_used: bool = False
+    relabel: bool = False
 
     # Environment wrapper configuration.
     frame_stack: int = 1
@@ -217,22 +218,21 @@ def main(args: Args) -> None:
         reset_interval=args.reset_interval,
         tqdm_bar=args.tqdm_bar,
         num_workers=args.num_workers,
+        relabel=args.relabel,
     )
 
     # Continuously monitor for checkpoints and evaluate.
-    # args.print_fingers_used = True
-    new_args = dataclasses.replace(args, print_fingers_used=True)
     eval_loop(
         experiment=experiment,
         env_fn=lambda: MidiEvaluationWrapper(
             PianoSoundVideoWrapper(
-                env_fn(args=new_args, record_dir=experiment.data_dir / "videos"),
+                env_fn(args=args, record_dir=experiment.data_dir / "videos"),
                 record_every=1,
                 camera_id="piano/back",
                 record_dir=experiment.data_dir / "videos",
             )
         ),
-        agent_fn=partial(agent_fn, args=new_args),
+        agent_fn=partial(agent_fn, args=args),
         num_episodes=args.eval_episodes,
         max_steps=args.max_steps,
     )
