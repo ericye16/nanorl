@@ -29,7 +29,6 @@ def environment_worker(env_fn: EnvFn, pipe: Connection, relabel: bool = False):
     orig_rewards = 0
     while True:
         action = pipe.recv()
-        # print("action shape 0", action.shape)
         timestep = env.step(action)
         orig_rewards += timestep.reward
         pipe.send(timestep)
@@ -37,32 +36,32 @@ def environment_worker(env_fn: EnvFn, pipe: Connection, relabel: bool = False):
         if timestep.last():
             stats = env.get_statistics()
             stats["total_reward"] = orig_rewards
+            stats.update(env.get_musical_metrics())
             orig_rewards = 0
             actual_keys_played = env.task.actual_keys_played
+            actual_sustain = env.task.actual_sustain
             actual_fingers = env.task.actual_fingers_used
             timestep = env.reset()
             pipe.send((stats, timestep))
-            # stuff.append(stats)
-            # stuff.append(actual_keys_played)
-            # pipe.send(stuff)
-            # fun replay stuff
+
             if relabel:
-                replay_env = env_fn(replay_keys=(actual_keys_played, actual_fingers))
+                replay_env = env_fn(replay_keys=(actual_keys_played, actual_sustain, actual_fingers))
                 replay_timestep = replay_env.reset()
                 replay_buffer = []
                 relabel_rewards = 0
                 # this one doesn't work for some reason
                 replay_buffer.append((replay_timestep, None))
-                # print("at: ", all_timesteps)
                 for replayed_timestep, action in stuff:
                     if action is None:
                         break
-                    # print("action shape 2", action.shape)
                     new_timestep = replay_env.step(action)
                     relabel_rewards += new_timestep.reward
                     replay_buffer.append((new_timestep, action))
-                # relabel_stats = replay_env.get_statistics()
                 relabel_stats = {"total_rewards": relabel_rewards}
+                try:
+                    relabel_stats.update(replay_env.get_musical_metrics())
+                except ValueError:
+                    print("Couldn't get replay metrics?")
                 pipe.send((replay_buffer, relabel_stats))
             stuff = []
 

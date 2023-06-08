@@ -207,7 +207,7 @@ def main(args: Args) -> None:
     pool.submit(
         train_loop,
         experiment=experiment,
-        env_fn=partial(env_fn, args=args),
+        env_fn=lambda **kwargs: MidiEvaluationWrapper(env_fn(args=args, **kwargs)),
         agent_fn=partial(agent_fn, args=args),
         replay_fn=partial(replay_fn, args=args),
         max_steps=args.max_steps,
