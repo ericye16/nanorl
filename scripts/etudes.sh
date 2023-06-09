@@ -4,7 +4,7 @@ train () {
     XLA_PYTHON_CLIENT_PREALLOCATE=false PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
         --environment_name "$1" \
         --root-dir ~/robopianist_baselines/runs/ \
-        --name "$1" \
+        --name "$1-relabel" \
         --warmstart-steps 5000 \
         --checkpoint_interval 10000 \
         --max-steps 1000000 \
@@ -22,6 +22,7 @@ train () {
         --eval-episodes 1 \
         --camera-id "piano/back" \
         --tqdm-bar \
+        --relabel \
         --num_workers 1
 }
 

@@ -180,7 +180,10 @@ def main(args: Args) -> None:
     if args.name:
         run_name = args.name
     else:
-        run_name = f"SAC-{args.environment_name}-{args.seed}-{time.time()}"
+        run_name = f"SAC-{args.environment_name}-{args.seed}"
+        if args.relabel:
+            run_name += "-relabel"
+        run_name += f"-{time.time()}"
 
     # Seed RNGs.
     seed_rngs(args.seed)
