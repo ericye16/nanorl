@@ -51,12 +51,23 @@ def environment_worker(env_fn: EnvFn, pipe: Connection, relabel: bool = False):
                 relabel_rewards = 0
                 # this one doesn't work for some reason
                 replay_buffer.append((replay_timestep, None))
+                # print(f"Expecting {len(stuff)} relabelled")
+                # print(replay_timestep)
+                count_relabelled = 0
                 for replayed_timestep, action in stuff:
                     if action is None:
-                        break
+                        # print("Skipping none action")
+                        continue
                     new_timestep = replay_env.step(action)
+                    count_relabelled += 1
                     relabel_rewards += new_timestep.reward
                     replay_buffer.append((new_timestep, action))
+                    # Maybe required to "reset" buffer?
+                    if new_timestep.last():
+                        if count_relabelled != len(stuff):
+                            print(f"weird, relabelled length not matching at {count_relabelled}")
+                        # replay_buffer.append((new_timestep, None))
+                        break
                 relabel_stats = {"total_rewards": relabel_rewards}
                 try:
                     relabel_stats.update(replay_env.get_musical_metrics())
@@ -64,6 +75,7 @@ def environment_worker(env_fn: EnvFn, pipe: Connection, relabel: bool = False):
                     print("Couldn't get replay metrics?")
                 pipe.send((replay_buffer, relabel_stats))
             stuff = []
+            stuff.append((timestep, None))
 
 
 def train_loop(
@@ -133,13 +145,16 @@ def train_loop(
             if timestep.last():
                 stats, timestep = pipes[i].recv()
                 experiment.log(utils.prefix_dict("train", stats), step=step)
-                replay_buffers[i].insert(timestep, None)
-                timesteps[i] = timestep
+                # The order here is actually very important, must do this, then
+                # add the timestep, None to the buffer
                 if relabel:
                     replay_buffer_list, relabel_stats = pipes[i].recv()
+                    assert replay_buffer_list[0][1] is None
                     for (ts, ac) in replay_buffer_list:
                         replay_buffers[i].insert(ts, ac)
                     experiment.log(utils.prefix_dict("train_relabel", relabel_stats), step=step)
+                replay_buffers[i].insert(timestep, None)
+                timesteps[i] = timestep
                                 
 
     for proc in procs:
