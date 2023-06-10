@@ -1,7 +1,7 @@
 #!/bin/bash
 
 MUJOCO_GL=egl XLA_PYTHON_CLIENT_PREALLOCATE=false PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suite.py \
-    --root-dir ~/nanorl/runs/ \
+    --root-dir ~/exp2/runs/ \
     --warmstart-steps 5000 \
     --checkpoint_interval 10000 \
     --max-steps 1000000 \

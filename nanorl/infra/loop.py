@@ -64,8 +64,8 @@ def environment_worker(env_fn: EnvFn, pipe: Connection, relabel: bool = False):
                     replay_buffer.append((new_timestep, action))
                     # Maybe required to "reset" buffer?
                     if new_timestep.last():
-                        if count_relabelled != len(stuff):
-                            print(f"weird, relabelled length not matching at {count_relabelled}")
+                        if count_relabelled != len(stuff) - 1:
+                            print(f"weird, relabelled length {len(stuff)} not matching at {count_relabelled}")
                         # replay_buffer.append((new_timestep, None))
                         break
                 relabel_stats = {"total_rewards": relabel_rewards}
