@@ -86,6 +86,7 @@ class Args:
     primitive_fingertip_collisions: bool = False
     print_fingers_used: bool = False
     relabel: bool = False
+    use_tiered_reward: bool = False
 
     # Environment wrapper configuration.
     frame_stack: int = 1
@@ -162,6 +163,7 @@ def env_fn(*, args, record_dir: Optional[Path] = None, replay_keys = None) -> dm
             primitive_fingertip_collisions=args.primitive_fingertip_collisions,
             print_fingers_used=args.print_fingers_used,
             change_color_on_activation=True,
+            use_tiered_reward=args.use_tiered_reward,
         ),
     )
 
@@ -183,6 +185,8 @@ def main(args: Args) -> None:
         run_name = f"SAC-{args.environment_name}-{args.seed}"
         if args.relabel:
             run_name += "-relabel"
+        if args.use_tiered_reward:
+            run_name += "-tiered_reward"
         run_name += f"-{time.time()}"
 
     # Seed RNGs.
