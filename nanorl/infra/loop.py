@@ -91,7 +91,7 @@ def train_loop(
                 experiment.save_checkpoint(agent, step=step)
 
             if step % log_interval == 0:
-                experiment.log({"train/fps": int(step*num_workers / (time.time() - start_time))}, step=step)
+                experiment.log({"train/fps": int(step / (time.time() - start_time))}, step=step)
 
         if resets and step % reset_interval == 0:
             agent = agent_fn(env)

@@ -158,8 +158,8 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --discount 0.99 \
     --agent-config.critic-dropout-rate 0.01 \
     --agent-config.critic-layer-norm \
-    --agent-config.hidden-dims 128 128 \
-    --agent-config.num_heads 2 \
+    --agent-config.hidden-dims 256 256 256 256 \
+    --agent-config.num_heads 4 \
     --trim-silence \
     --gravity-compensation \
     --reduced-action-space \

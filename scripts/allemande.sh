@@ -6,24 +6,25 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --root-dir ~/cs224r/nanorl/runs/ \
     --name "Allemande" \
     --warmstart-steps 5000 \
-    --max-steps 100000 \
+    --max-steps 1000000 \
     --discount 0.99 \
     --agent-config.critic-dropout-rate 0.01 \
     --agent-config.critic-layer-norm \
-    --agent-config.hidden-dims 128 128 \
+    --agent-config.hidden-dims 256 256 256 \
     --trim-silence \
     --gravity-compensation \
     --reduced-action-space \
     --control-timestep 0.05 \
-    --n-steps-lookahead 10 \
+    --n-steps-lookahead 100 \
     --action-reward-observation \
+    --num_workers 10 \
     --primitive-fingertip-collisions \
     --eval-episodes 1 \
     --camera-id "piano/back" \
     --tqdm-bar \
     --num_workers 1 \
     --agent_config.num_qs 2 \
-    --replay_capacity 1000000 \
+    --replay_capacity 100000 \
     --checkpoint_interval 10000 \
     --log_interval 100 \
     --batch_size 256 \

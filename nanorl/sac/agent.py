@@ -14,7 +14,7 @@ from flax.training.train_state import TrainState
 from transformers import BertConfig
 
 from nanorl import agent
-from nanorl.distributions import Normal, TanhNormal
+from nanorl.distributions import TanhNormal
 from nanorl.networks import (
     MLP,
     Ensemble,
@@ -132,6 +132,7 @@ class SAC(agent.Agent):
                 hidden_dims=config.hidden_dims,
                 activation=getattr(nn, config.activation),
                 activate_final=True,
+                sequence_len=lookahead+1,
             )
         actor_def = TanhNormal(actor_base_cls, action_dim)
         actor_params = actor_def.init(actor_key, observations)["params"]
@@ -163,6 +164,7 @@ class SAC(agent.Agent):
                 activate_final=True,
                 dropout_rate=config.critic_dropout_rate,
                 use_layer_norm=config.critic_layer_norm,
+                sequence_len=lookahead+1,
             )
         critic_cls = partial(StateActionValue, base_cls=critic_base_cls)
         # critic_cls = partial(Normal, base_cls=critic_cls, action_dim=1)

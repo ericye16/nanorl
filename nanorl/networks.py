@@ -15,9 +15,10 @@ default_init = nn.initializers.xavier_uniform
 
 class TransformerAnd(nn.Module):
     config: BertConfig
+    sequence_len: int
     dtype: jnp.dtype = jnp.float32
-    sequence_len: int = 11
     obs_ts_dim: int = 89
+    fingering_dim: int = 10
 
     def setup(self):
         self.position_embeddings = nn.Embed(
@@ -33,30 +34,49 @@ class TransformerAnd(nn.Module):
         )
         self.LayerNorm = nn.LayerNorm(epsilon=self.config.layer_norm_eps, dtype=self.dtype)
         self.dropout = nn.Dropout(rate=self.config.hidden_dropout_prob)
-        self.conv = nn.Conv(features=self.config.hidden_size, kernel_size=(10,), strides=10)
+        self.note_conv = nn.Conv(features=self.config.hidden_size, kernel_size=(10,), strides=10)
+        self.fingering_conv = nn.Conv(features=self.config.hidden_size, kernel_size=(10,), strides=10)
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
         if len(x.shape) == 1:
             x = jnp.expand_dims(x, 0)
-        offset = 49
+        offset = 39
         goal_states_len = self.obs_ts_dim * self.sequence_len
-        goal_states, fixed_state = x[:, offset:goal_states_len+offset], jnp.concatenate([
-            x[:, :offset],
-            x[:, goal_states_len+offset:],
-        ], axis=-1)
+        fingering_states_len = self.fingering_dim * self.sequence_len
+        fingering_states, goal_states, fixed_state = (
+            x[:, offset:fingering_states_len+offset],
+            x[:, fingering_states_len+offset:goal_states_len+fingering_states_len+offset],
+            jnp.concatenate([
+                x[:, :offset],
+                x[:, goal_states_len+fingering_states_len+offset:],
+            ], axis=-1),
+        )
 
-        reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.obs_ts_dim))
-        goal_states = jax.vmap(reshaper)(goal_states)
+        goal_reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.obs_ts_dim))
+        goal_states = jax.vmap(goal_reshaper)(goal_states)
+        fingering_reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.fingering_dim))
+        fingering_states = jax.vmap(fingering_reshaper)(fingering_states)
         fixed_state = jnp.expand_dims(fixed_state, 1)
         hidden_dim = self.config.hidden_size
-        note_embeddings = jax.vmap(self.conv)(goal_states)
+        note_embeddings = jnp.concatenate([
+            nn.Dense(features=hidden_dim)(goal_states[:, :1, :]),
+            jax.vmap(self.note_conv)(goal_states[:, 1:, :]),
+        ], axis=1)
+        fingering_embeddings = jnp.concatenate([
+            nn.Dense(features=hidden_dim)(fingering_states[:, :1, :]),
+            jax.vmap(self.fingering_conv)(fingering_states[:, 1:, :]),
+        ], axis=1)
         # note_embeddings = nn.Dense(features=hidden_dim, name="emb_goal")(note_embeddings)
-        fixed_state_embeddings = nn.Dense(features=hidden_dim, name="emb_fixed")(fixed_state).repeat(note_embeddings.shape[-2], axis=1)
-        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(note_embeddings).shape[-2]), note_embeddings.shape[:-1])
+        fixed_state_embedding = nn.Dense(features=hidden_dim, name="emb_fixed")(fixed_state)
+
+        music_embeddings = note_embeddings + fingering_embeddings
+        hidden_states = jnp.concatenate([music_embeddings, fixed_state_embedding], axis=1)
+
+        position_ids = jnp.broadcast_to(jnp.arange(jnp.atleast_2d(hidden_states).shape[1]), hidden_states.shape[:-1])
         positional_embeddings = self.position_embeddings(position_ids.astype("i4"))
 
-        hidden_states = note_embeddings + fixed_state_embeddings + positional_embeddings
+        hidden_states = hidden_states + positional_embeddings
         hidden_states = self.LayerNorm(hidden_states)
         hidden_states = self.dropout(hidden_states, deterministic=not training)
         hidden_state = self.encoder(
@@ -73,13 +93,45 @@ class TransformerAnd(nn.Module):
 
 class MLP(nn.Module):
     hidden_dims: Sequence[int]
+    sequence_len: int
     activation: Callable[[jnp.ndarray], jnp.ndarray] = nn.gelu
     activate_final: bool = False
     use_layer_norm: bool = False
     dropout_rate: Optional[float] = None
+    obs_ts_dim: int = 89
+    fingering_dim: int = 10
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
+        if len(x.shape) == 1:
+            x = jnp.expand_dims(x, 0)
+        bsz = x.shape[0]
+        offset = 39
+        goal_states_len = self.obs_ts_dim * self.sequence_len
+        fingering_states_len = self.fingering_dim * self.sequence_len
+        fingering_states, goal_states, fixed_state = (
+            x[:, offset:fingering_states_len+offset],
+            x[:, fingering_states_len+offset:goal_states_len+fingering_states_len+offset],
+            jnp.concatenate([
+                x[:, :offset],
+                x[:, goal_states_len+fingering_states_len+offset:],
+            ], axis=-1),
+        )
+
+        goal_reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.obs_ts_dim))
+        goal_states = jax.vmap(goal_reshaper)(goal_states)
+        fingering_reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.fingering_dim))
+        fingering_states = jax.vmap(fingering_reshaper)(fingering_states)
+        note_embeddings = jnp.concatenate([
+            goal_states[:, :1, :],
+            jax.vmap(nn.Conv(goal_states.shape[-1], kernel_size=(10,), strides=(10,), name="note_conv"))(goal_states[:, 1:, :]),
+        ], axis=1)
+        fingering_embeddings = jnp.concatenate([
+            fingering_states[:, :1, :],
+            jax.vmap(nn.Conv(fingering_states.shape[-1], kernel_size=(10,), strides=(10,), name="fingering_conv"))(fingering_states[:, 1:, :]),
+        ], axis=1)
+        music_embeddings = jnp.concatenate([note_embeddings, fingering_embeddings], axis=-1).reshape((bsz, -1))
+        x = jnp.concatenate([music_embeddings, fixed_state], axis=-1)
         for i, size in enumerate(self.hidden_dims):
             x = nn.Dense(size, kernel_init=default_init())(x)
 
