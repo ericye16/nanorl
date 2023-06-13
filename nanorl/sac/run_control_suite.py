@@ -182,7 +182,7 @@ def main(args: Args) -> None:
     if args.name:
         run_name = args.name
     else:
-        run_name = f"SAC-{args.environment_name}-{args.seed}-key_press_change-single_finger"
+        run_name = f"SAC-{args.environment_name}-{args.seed}-key_press_change"
         if args.relabel:
             run_name += "-relabel"
         if args.use_tiered_reward:
