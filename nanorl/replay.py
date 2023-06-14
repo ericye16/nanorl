@@ -13,6 +13,13 @@ from nanorl.specs import EnvironmentSpec
 from nanorl.types import Transition
 
 
+def stack_obs(obs, axis=0):
+    return {
+        k: np.stack([o[k] for o in obs], axis=axis)
+        for k in obs[0]
+    }
+
+
 class _CircularBuffer:
     """A circular data buffer."""
 
@@ -78,11 +85,11 @@ class _CircularBuffer:
             indices = random.sample(range(len(self)), batch_size)
             obs_tm1, a_tm1, r_t, d_t, obs_t = zip(*[self._buffer[i] for i in indices])
         return Transition(
-            observation=np.stack(obs_tm1),
+            observation=stack_obs(obs_tm1),
             action=np.asarray(a_tm1),
             reward=np.asarray(r_t),
             discount=np.asarray(d_t),
-            next_observation=np.stack(obs_t),
+            next_observation=stack_obs(obs_t),
         )
 
 
@@ -207,8 +214,13 @@ def _get_size_in_bytes(n_elements: int, spec: EnvironmentSpec) -> int:
     """Caclulates the total size of `n_elements` transitions, in bytes."""
     total_size: int = 0
     # Observation and next observation.
-    obs_dtype = spec.observation.dtype
-    total_size += (spec.observation.shape[0] * obs_dtype.itemsize) * 2
+    for v in spec.observation.values():
+        obs_dtype = v.dtype
+        if len(v.shape) == 0:
+            v_shape = 1
+        else:
+            v_shape = v.shape[0]
+        total_size += (v_shape * obs_dtype.itemsize) * 2
     # Action.
     action_dtype = spec.action.dtype
     total_size += spec.action.shape[0] * action_dtype.itemsize

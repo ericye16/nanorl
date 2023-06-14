@@ -17,7 +17,7 @@ PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python nanorl/sac/run_control_suit
     --control-timestep 0.05 \
     --n-steps-lookahead 100 \
     --action-reward-observation \
-    --num_workers 10 \
+    --num_workers 1 \
     --primitive-fingertip-collisions \
     --eval-episodes 1 \
     --camera-id "piano/back" \

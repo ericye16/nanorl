@@ -8,7 +8,6 @@ from typing import Any, Callable, Optional, Sequence
 
 import dm_env
 import tqdm
-from jax import numpy as jnp
 
 from nanorl import agent, replay, specs
 from nanorl.infra import Experiment, utils
@@ -74,7 +73,7 @@ def train_loop(
             if step < warmstart_steps:
                 actions = [spec.sample_action(random_state=env.random_state) for _ in timesteps]
             else:
-                agent, actions = agent.sample_actions(jnp.stack([ts.observation for ts in timesteps], axis=0))
+                agent, actions = agent.sample_actions(replay.stack_obs([ts.observation for ts in timesteps], axis=0))
 
             for action, pipe in zip(actions, pipes, strict=True):
                 pipe.send(action)
@@ -136,7 +135,7 @@ def eval(
         envs_copy = copy(envs)
         timesteps = [env.reset() for env in envs_copy]
         while envs_copy:
-            actions = agent.eval_actions(jnp.stack([ts.observation for ts in timesteps], axis=0))
+            actions = agent.eval_actions(replay.stack_obs([ts.observation for ts in timesteps], axis=0))
             new_timesteps = []
             new_envs = []
             for env, timestep, action in zip(envs_copy, timesteps, actions, strict=True):

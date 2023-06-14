@@ -102,6 +102,7 @@ class SAC(agent.Agent):
         discount: float = 0.99,
     ) -> "SAC":
         """Initializes the agent from the given environment spec and config."""
+        print({k: v.shape for k, v in spec.observation.items()})
 
         action_dim = spec.action.shape[-1]
         observations = zeros_like(spec.observation)

@@ -1,6 +1,6 @@
 """Type definitions."""
 
-from typing import Any, NamedTuple
+from typing import Any, Dict, NamedTuple
 
 import jax
 import numpy as np
@@ -12,8 +12,8 @@ LogDict = dict[str, float]
 
 
 class Transition(NamedTuple):
-    observation: np.ndarray
+    observation: Dict[str, np.ndarray]
     action: np.ndarray
     reward: np.ndarray
     discount: np.ndarray
-    next_observation: np.ndarray
+    next_observation: Dict[str, np.ndarray]

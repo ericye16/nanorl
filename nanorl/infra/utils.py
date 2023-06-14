@@ -106,8 +106,6 @@ def wrap_env(
     if action_reward_observation:
         env = wrappers.ObservationActionRewardWrapper(env)
 
-    env = wrappers.ConcatObservationWrapper(env)
-
     if frame_stack > 1:
         env = wrappers.FrameStackingWrapper(env, num_frames=frame_stack, flatten=True)
 

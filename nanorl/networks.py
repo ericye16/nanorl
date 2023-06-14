@@ -39,19 +39,20 @@ class TransformerAnd(nn.Module):
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
-        if len(x.shape) == 1:
-            x = jnp.expand_dims(x, 0)
-        offset = 39
-        goal_states_len = self.obs_ts_dim * self.sequence_len
-        fingering_states_len = self.fingering_dim * self.sequence_len
-        fingering_states, goal_states, fixed_state = (
-            x[:, offset:fingering_states_len+offset],
-            x[:, fingering_states_len+offset:goal_states_len+fingering_states_len+offset],
-            jnp.concatenate([
-                x[:, :offset],
-                x[:, goal_states_len+fingering_states_len+offset:],
-            ], axis=-1),
-        )
+        goal_states = x['goal']
+        fingering_states = x['fingering']
+        if len(x['reward'].shape) < len(goal_states.shape):
+            x['reward'] = jnp.expand_dims(x['reward'], -1)
+        fixed_state = jnp.concatenate([
+            v
+            for k, v in x.items()
+            if k not in ('goal', 'fingering')
+        ], axis=-1)
+
+        if len(goal_states.shape) == 1:
+            goal_states = jnp.expand_dims(goal_states, 0)
+            fingering_states = jnp.expand_dims(fingering_states, 0)
+            fixed_state = jnp.expand_dims(fixed_state, 0)
 
         goal_reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.obs_ts_dim))
         goal_states = jax.vmap(goal_reshaper)(goal_states)
@@ -103,20 +104,21 @@ class MLP(nn.Module):
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, training: bool = False) -> jnp.ndarray:
-        if len(x.shape) == 1:
-            x = jnp.expand_dims(x, 0)
-        bsz = x.shape[0]
-        offset = 39
-        goal_states_len = self.obs_ts_dim * self.sequence_len
-        fingering_states_len = self.fingering_dim * self.sequence_len
-        fingering_states, goal_states, fixed_state = (
-            x[:, offset:fingering_states_len+offset],
-            x[:, fingering_states_len+offset:goal_states_len+fingering_states_len+offset],
-            jnp.concatenate([
-                x[:, :offset],
-                x[:, goal_states_len+fingering_states_len+offset:],
-            ], axis=-1),
-        )
+        goal_states = x['goal']
+        fingering_states = x['fingering']
+        if len(x['reward'].shape) < len(x['goal'].shape):
+            x['reward'] = jnp.expand_dims(x['reward'], -1)
+        fixed_state = jnp.concatenate([
+            v
+            for k, v in x.items()
+            if k not in ('goal', 'fingering')
+        ], axis=-1)
+
+        if len(fixed_state.shape) == 1:
+            goal_states = jnp.expand_dims(goal_states, 0)
+            fingering_states = jnp.expand_dims(fingering_states, 0)
+            fixed_state = jnp.expand_dims(fixed_state, 0)
+        bsz = goal_states.shape[0]
 
         goal_reshaper = lambda x: jnp.reshape(x, (self.sequence_len, self.obs_ts_dim))
         goal_states = jax.vmap(goal_reshaper)(goal_states)
@@ -153,8 +155,8 @@ class StateActionValue(nn.Module):
     def __call__(
         self, observations: jnp.ndarray, actions: jnp.ndarray, *args, **kwargs
     ) -> jnp.ndarray:
-        inputs = jnp.concatenate([observations, actions], axis=-1)
-        outputs = self.base_cls()(inputs, *args, **kwargs)
+        observations["actions"] = actions
+        outputs = self.base_cls()(observations, *args, **kwargs)
 
         value = nn.Dense(1, kernel_init=default_init())(outputs)
 
